@@ -134,7 +134,7 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 	})
 	t.Tags = tags
 
-	t.Messages = parseMessages(messagesSelection, "html")
+	t.Messages = parseMessages(messagesSelection, m.Format)
 	return t, nil
 }
 
