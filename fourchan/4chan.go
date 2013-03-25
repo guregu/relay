@@ -14,8 +14,8 @@ const threadURL = "http://api.4chan.org/%s/res/%s.json"
 const boardURL = "http://api.4chan.org/%s/%d.json"
 const catalogURL = "http://api.4chan.org/%s/catalog.json"
 const boardListURL = "http://api.4chan.org/boards.js"
-const imageURL = "http://images.4chan.org/%s/src/%d.%s"
-const thumbnailURL = "http://thumbs.4chan.org/%s/thumb/%d.%s"
+const imageURL = "http://images.4chan.org/%s/src/%d%s"
+const thumbnailURL = "http://thumbs.4chan.org/%s/thumb/%d%s"
 const spoilerImageURL = "http://static.4chan.org/image/spoiler.png"
 
 var Hello = bbs.HelloMessage{
@@ -65,7 +65,7 @@ type FourchanPost struct {
 	Email         string `json:"email,omitempty"`
 	Subject       string `json:"sub,omitempty"`
 	Text          string `json:"com,omitempty"` //HTML
-	FileName      int    `json:"tim,omitempty"`
+	FileTime      uint64 `json:"tim,omitempty"`
 	FileExt       string `json:"ext,omitempty"`
 	FileDeleted   int    `json:"filedeleted,omitempty"`
 	Spoiler       int    `json:"spoiler,omitempty"`
@@ -114,15 +114,31 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 		if m.Format == "text" {
 			text = unhtml(text)
 		}
-		messages = append(messages, &bbs.Message{
-			ID:           strconv.Itoa(t.Number),
-			Author:       name(t),
-			AuthorID:     t.ID,
-			Date:         t.Date,
-			Text:         text,
-			PictureURL:   fmt.Sprintf(imageURL, m.Board, t.FileName, t.FileExt),
-			ThumbnailURL: fmt.Sprintf(thumbnailURL, m.Board, t.FileName, t.FileExt),
-		})
+
+		thumb := fmt.Sprintf(thumbnailURL, m.Board, t.FileTime, t.FileExt)
+		if t.Spoiler != 0 {
+			thumb = spoilerImageURL
+		}
+
+		if t.FileTime != 0 {
+			messages = append(messages, &bbs.Message{
+				ID:           strconv.Itoa(t.Number),
+				Author:       name(t),
+				AuthorID:     t.ID,
+				Date:         t.Date,
+				Text:         text,
+				PictureURL:   fmt.Sprintf(imageURL, m.Board, t.FileTime, t.FileExt),
+				ThumbnailURL: thumb,
+			})
+		} else {
+			messages = append(messages, &bbs.Message{
+				ID:       strconv.Itoa(t.Number),
+				Author:   name(t),
+				AuthorID: t.ID,
+				Date:     t.Date,
+				Text:     text,
+			})
+		}
 	}
 
 	return &bbs.ThreadMessage{
@@ -158,6 +174,11 @@ func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorM
 				title = summary(html.UnescapeString(t.Text))
 			}
 
+			thumb := fmt.Sprintf(thumbnailURL, m.Query, t.FileTime, t.FileExt)
+			if t.Spoiler != 0 {
+				thumb = spoilerImageURL
+			}
+
 			threads = append(threads, &bbs.ThreadListing{
 				ID:           strconv.Itoa(t.Number),
 				Title:        title,
@@ -165,8 +186,8 @@ func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorM
 				AuthorID:     t.ID,
 				Date:         t.Date,
 				PostCount:    t.Replies,
-				PictureURL:   fmt.Sprintf(imageURL, m.Query, t.FileName, t.FileExt),
-				ThumbnailURL: fmt.Sprintf(thumbnailURL, m.Query, t.FileName, t.FileExt),
+				PictureURL:   fmt.Sprintf(imageURL, m.Query, t.FileTime, t.FileExt),
+				ThumbnailURL: thumb,
 			})
 		}
 	}
