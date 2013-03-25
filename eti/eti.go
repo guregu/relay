@@ -208,6 +208,10 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 	return ret, nil
 }
 
+func (eti *ETI) BoardList(m *bbs.ListCommand) (blm *bbs.BoardListMessage, em *bbs.ErrorMessage) {
+	return nil, &bbs.ErrorMessage{"error", "list", "ETI has no boards anymore."}
+}
+
 func (eti *ETI) LogIn(m *bbs.LoginCommand) bool {
 	username := m.Username
 	password := m.Password

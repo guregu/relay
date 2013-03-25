@@ -13,7 +13,7 @@ import "strings"
 const threadURL = "http://api.4chan.org/%s/res/%s.json"
 const boardURL = "http://api.4chan.org/%s/%d.json"
 const catalogURL = "http://api.4chan.org/%s/catalog.json"
-const boardListURL = "http://api.4chan.org/boards.js"
+const boardListURL = "http://api.4chan.org/boards.json"
 const imageURL = "http://images.4chan.org/%s/src/%d%s"
 const thumbnailURL = "http://thumbs.4chan.org/%s/thumb/%d%s"
 const spoilerImageURL = "http://static.4chan.org/image/spoiler.png"
@@ -73,6 +73,23 @@ type FourchanPost struct {
 	OmittedImages int    `json:"omitted_images,omitempty"`
 	Replies       int    `json:"replies,omitempty"`
 	Images        int    `json:"images,omitempty"`
+}
+
+type Boards struct {
+	List []*Board `json:"boards"`
+}
+
+type Board struct {
+	ID       string `json:"board"`
+	Name     string `json:"title"`
+	Worksafe int    `json:"ws_board"`
+}
+
+func (b Board) String() string {
+	if b.Worksafe != 1 {
+		return fmt.Sprintf("/%s/ - %s (NWS)", b.ID, b.Name)
+	}
+	return fmt.Sprintf("/%s/ - %s", b.ID, b.Name)
 }
 
 func (f *Fourchan) LogIn(m *bbs.LoginCommand) bool {
@@ -148,6 +165,30 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 		Board:    m.Board,
 		Format:   "html",
 		Messages: messages,
+	}, nil
+}
+
+func (f *Fourchan) BoardList(m *bbs.ListCommand) (blm *bbs.BoardListMessage, em *bbs.ErrorMessage) {
+	data, code := getBytes(boardListURL, false)
+	if code != 200 {
+		return nil, &bbs.ErrorMessage{"error", "list", fmt.Sprintf("4chan error %d", code)}
+	}
+
+	var b = Boards{}
+	json.Unmarshal(data, &b)
+
+	var boards []*bbs.BoardListing
+	for _, board := range b.List {
+		boards = append(boards, &bbs.BoardListing{
+			ID:   board.ID,
+			Name: board.String(),
+		})
+	}
+
+	return &bbs.BoardListMessage{
+		Command: "list",
+		Type:    "board",
+		Boards:  boards,
 	}, nil
 }
 
