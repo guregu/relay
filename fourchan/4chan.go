@@ -20,7 +20,7 @@ const spoilerImageURL = "http://static.4chan.org/image/spoiler.png"
 
 var Hello = bbs.HelloMessage{
 	Command:         "hello",
-	Name:            "◯chan relay",
+	Name:            "Fourchan relay",
 	ProtocolVersion: 0,
 	Description:     "4chan -> BBS Relay",
 	Options:         []string{"imageboard", "readonly", "boards"},

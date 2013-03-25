@@ -1,0 +1,20 @@
+# available services: eti, fourchan
+
+# you can leave out any of these settings
+# except for enabled, which must be true to start the server
+
+# right now, only one service can run at a time, but this will change.
+
+[eti]
+bind = "localhost:8080"
+path = "/bbs"
+name = "ETI Gateway"
+description = "ETI -> BBS Gateway"
+enabled = false
+
+[fourchan]
+bind = "localhost:8080"
+path = "/bbs"
+name = "Fourchan Gateway"
+description = "Read only 4chan -> BBS Gateway"
+enabled = true
