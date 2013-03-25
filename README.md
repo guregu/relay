@@ -6,9 +6,14 @@ You can read more here: https://github.com/tiko-chan/bbs
 
 Right now there isn't much.
 
+Fourchan
+---
+A simple proxy for 4chan's read-only JSON API. TODO: Limit the requests to 1 per second, cache ;)
+Thanks for the API moot!
+
 ETI
 ---
-Let's you use endoftheinter.net under the bbs protocol. Not of much interest unless you have an account.
+Lets you use endoftheinter.net under the bbs protocol. Not of much interest unless you have an account.
 
 More soon!
 ----
