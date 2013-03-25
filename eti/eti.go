@@ -22,6 +22,20 @@ const postThreadURL = "http://boards.endoftheinter.net/postmsg.php"
 
 var AllPosts = &bbs.Range{1, 5000}
 
+var Hello = bbs.HelloMessage{
+	Command:         "hello",
+	Name:            "ETI Relay",
+	ProtocolVersion: 0,
+	Description:     "End of the Internet -> BBS Relay",
+	Options:         []string{"tags", "avatars", "usertitles", "filter"},
+	Access: bbs.AccessInfo{
+		GuestCommands: []string{"hello", "login"},
+		UserCommands:  []string{"get", "list", "post", "reply", "info"},
+	},
+	Formats:       []string{"html", "text"},
+	ServerVersion: "eti-relay 0.1",
+}
+
 type ETI struct {
 	HTTPClient *http.Client
 	Username   string
@@ -179,7 +193,16 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 		}
 		posts, _ := strconv.Atoi(strings.Fields(s.Find("td:nth-child(3)").Text())[0])
 		date := s.Find("td:nth-child(4)").Text()
-		threads = append(threads, &bbs.ThreadListing{id, title, username, userid, date, posts, tags})
+
+		threads = append(threads, &bbs.ThreadListing{
+			ID:        id,
+			Title:     title,
+			Author:    username,
+			AuthorID:  userid,
+			Date:      date,
+			PostCount: posts,
+			Tags:      tags,
+		})
 	})
 	ret = &bbs.ListMessage{"list", "thread", query, threads}
 	return ret, nil
