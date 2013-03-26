@@ -85,6 +85,9 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 			if startPage != 1 {
 				currentDoc = stringToDocument(getURLData(client.HTTPClient, fetchURL))
 			}
+			t.Closed = true
+		} else if i == 0 && currentDoc.Find("h2 em").Text() == "This topic has been closed. No additional messages may be posted." {
+			t.Closed = true
 		}
 
 		find := currentDoc.Find(".message-container")
@@ -176,10 +179,18 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 		href, _ := link.Attr("href")
 		id := strings.Split(href, "?topic=")[1]
 		title := link.Text()
+		sticky := false
+		closed := false
+		if link.ParentFiltered(".closed").Size() > 0 {
+			closed = true
+		}
 		tag_e := sel.Find(".fr a")
 		tags := make([]string, tag_e.Size())
 		tag_e.Each(func(t_i int, t_sel *goquery.Selection) {
 			tags[t_i] = t_sel.Text()
+			if t_sel.Text() == "Pinned" {
+				sticky = true
+			}
 		})
 		user_link := s.Find("td:nth-child(2) a")
 		username := user_link.Text()
@@ -192,16 +203,24 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 			userid = strings.Split(user_href, "?user=")[1]
 		}
 		posts, _ := strconv.Atoi(strings.Fields(s.Find("td:nth-child(3)").Text())[0])
+		new_posts := 0
+		update_sel := s.Find("td:nth-child(3) span a")
+		if update_sel.Size() > 0 {
+			new_posts, _ = strconv.Atoi(strings.Trim(update_sel.Text(), "x+"))
+		}
 		date := s.Find("td:nth-child(4)").Text()
 
 		threads = append(threads, &bbs.ThreadListing{
-			ID:        id,
-			Title:     title,
-			Author:    username,
-			AuthorID:  userid,
-			Date:      date,
-			PostCount: posts,
-			Tags:      tags,
+			ID:          id,
+			Title:       title,
+			Author:      username,
+			AuthorID:    userid,
+			Date:        date,
+			PostCount:   posts,
+			Tags:        tags,
+			Sticky:      sticky,
+			Closed:      closed,
+			UnreadPosts: new_posts,
 		})
 	})
 	ret = &bbs.ListMessage{"list", "thread", query, threads}
