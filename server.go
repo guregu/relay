@@ -27,7 +27,7 @@ func main() {
 	if fourchanEnabled {
 		fourchan.Hello.Name = conf.GetString("fourchan.name", fourchan.Hello.Name)
 		fourchan.Hello.Description = conf.GetString("fourchan.description", fourchan.Hello.Description)
-		bbs.Serve(conf.GetString("eti.bind", "localhost:8080"), conf.GetString("eti.path", "/bbs"), fourchan.Hello, func() bbs.BBS { return new(fourchan.Fourchan) })
+		bbs.Serve(conf.GetString("fourchan.bind", "localhost:8080"), conf.GetString("fourchan.path", "/bbs"), fourchan.Hello, func() bbs.BBS { return new(fourchan.Fourchan) })
 		servers++
 	}
 }
