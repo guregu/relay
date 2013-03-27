@@ -20,6 +20,9 @@ const threadURL = "http://boards.endoftheinter.net/showmessages.php?topic="
 const postReplyURL = "http://boards.endoftheinter.net/async-post.php"
 const postThreadURL = "http://boards.endoftheinter.net/postmsg.php"
 
+const sigSplitHTML = "<br/>\n---<br/>"
+const sigSplitText = "\n---\n"
+
 var AllPosts = &bbs.Range{1, 5000}
 
 var Hello = bbs.HelloMessage{
@@ -397,14 +400,25 @@ func parseMessages(messages *goquery.Selection, format string) []*bbs.Message {
 			userpicURL = userpicURL[:len(userpicURL)-2] //chop off the last \, hacky
 			//but this whole thing is a hack so idgaf
 		}
-		var text string
+		var text, sig string
+		html, _ := message.Html()
+		hasSig := hasSig(html)
 		switch format {
 		case "text":
 			text = message.Text()
+			if hasSig {
+				text, sig = findSig(text, sigSplitText)
+			}
 		case "html":
-			text, _ = message.Html()
+			text = html
+			if hasSig {
+				text, sig = findSig(html, sigSplitHTML)
+			}
 		default:
-			text, _ = message.Html()
+			text = message.Text()
+			if hasSig {
+				text, sig = findSig(text, sigSplitText)
+			}
 		}
 		ret[i] = &bbs.Message{
 			ID:          msg_id,
@@ -414,9 +428,26 @@ func parseMessages(messages *goquery.Selection, format string) []*bbs.Message {
 			AvatarURL:   userpicURL,
 			Date:        date,
 			Text:        text,
+			Signature:   sig,
 		}
 	})
 	return ret
+}
+
+func hasSig(s string) bool {
+	split := strings.Split(s, sigSplitHTML)
+	return len(split) > 1
+}
+
+func findSig(s string, splitter string) (text string, sig string) {
+	split := strings.Split(s, splitter)
+	length := len(split)
+	if length == 1 {
+		return s, ""
+	}
+	text = strings.Join(split[0:length-1], splitter)
+	sig = split[length-1]
+	return text, sig
 }
 
 func etiPages(r *bbs.Range) (startPage, endPage int) {
