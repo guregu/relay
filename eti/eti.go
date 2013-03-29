@@ -36,6 +36,7 @@ var Hello = bbs.HelloMessage{
 		UserCommands:  []string{"get", "list", "post", "reply", "info"},
 	},
 	Formats:       []string{"html", "text"},
+	Lists:         []string{"thread"},
 	ServerVersion: "eti-relay 0.1",
 }
 

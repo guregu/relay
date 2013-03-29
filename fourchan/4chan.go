@@ -29,13 +29,12 @@ var Hello = bbs.HelloMessage{
 		GuestCommands: []string{"hello", "get", "list"},
 	},
 	Formats:       []string{"html", "text"},
+	Lists:         []string{"thread", "board"},
 	ServerVersion: "4chan-relay 0.1",
 }
 
 type Fourchan struct {
 }
-
-// we will only define the stuff we need
 
 type Catalog struct {
 	Pages []Page `json:"pages"`
