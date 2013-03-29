@@ -105,10 +105,22 @@ func (f *Fourchan) IsLoggedIn() bool {
 }
 
 func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorMessage) {
-	url := fmt.Sprintf(threadURL, m.Board, m.ThreadID)
+	//ThreadIDs are in this format:
+	// board/id
+	// like: cgl/4323443
+
+	split := strings.Split(m.ThreadID, "/")
+	if len(split) != 2 {
+		return nil, &bbs.ErrorMessage{"error", "get", "Invalid Thread ID: " + m.ThreadID}
+	}
+
+	board := split[0]
+	threadID := split[1]
+
+	url := fmt.Sprintf(threadURL, board, threadID)
 	data, code := getBytes(url, false)
 	if code == 404 {
-		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Thread /%s/%s not found.", m.Board, m.ThreadID)}
+		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Thread /%s/%s not found.", board, threadID)}
 	} else if code != 200 {
 		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("4chan error %d", code)}
 	}
@@ -132,7 +144,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 			text = unhtml(text)
 		}
 
-		thumb := fmt.Sprintf(thumbnailURL, m.Board, t.FileTime, t.FileExt)
+		thumb := fmt.Sprintf(thumbnailURL, board, t.FileTime, t.FileExt)
 		if t.Spoiler != 0 {
 			thumb = spoilerImageURL
 		}
@@ -144,7 +156,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 				AuthorID:     t.ID,
 				Date:         t.Date,
 				Text:         text,
-				PictureURL:   fmt.Sprintf(imageURL, m.Board, t.FileTime, t.FileExt),
+				PictureURL:   fmt.Sprintf(imageURL, board, t.FileTime, t.FileExt),
 				ThumbnailURL: thumb,
 			})
 		} else {
@@ -162,7 +174,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 		Command:  "msg",
 		ID:       strconv.Itoa(op.Number),
 		Title:    op.Subject,
-		Board:    m.Board,
+		Board:    board,
 		Format:   "html",
 		Messages: messages,
 	}, nil
@@ -221,7 +233,7 @@ func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorM
 			}
 
 			threads = append(threads, &bbs.ThreadListing{
-				ID:           strconv.Itoa(t.Number),
+				ID:           m.Query + "/" + strconv.Itoa(t.Number),
 				Title:        title,
 				Author:       name(t),
 				AuthorID:     t.ID,
