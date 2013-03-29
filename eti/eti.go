@@ -32,7 +32,7 @@ var Hello = bbs.HelloMessage{
 	Description:     "End of the Internet -> BBS Relay",
 	Options:         []string{"tags", "avatars", "usertitles", "filter"},
 	Access: bbs.AccessInfo{
-		GuestCommands: []string{"hello", "login"},
+		GuestCommands: []string{"hello", "login", "logout"},
 		UserCommands:  []string{"get", "list", "post", "reply", "info"},
 	},
 	Formats:       []string{"html", "text"},
