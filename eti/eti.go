@@ -24,13 +24,14 @@ const sigSplitHTML = "<br/>\n---<br/>"
 const sigSplitText = "\n---\n"
 
 var AllPosts = &bbs.Range{1, 5000}
+var DefaultRange = &bbs.Range{1, 50}
 
 var Hello = bbs.HelloMessage{
 	Command:         "hello",
 	Name:            "ETI Relay",
 	ProtocolVersion: 0,
 	Description:     "End of the Internet -> BBS Relay",
-	Options:         []string{"tags", "avatars", "usertitles", "filter"},
+	Options:         []string{"tags", "avatars", "usertitles", "filter", "signatures", "range"},
 	Access: bbs.AccessInfo{
 		GuestCommands: []string{"hello", "login", "logout"},
 		UserCommands:  []string{"get", "list", "post", "reply", "info"},
@@ -38,6 +39,8 @@ var Hello = bbs.HelloMessage{
 	Formats:       []string{"html", "text"},
 	Lists:         []string{"thread"},
 	ServerVersion: "eti-relay 0.1",
+	IconURL:       "/static/eti.png",
+	DefaultRange:  DefaultRange,
 }
 
 type ETI struct {
@@ -422,14 +425,14 @@ func parseMessages(messages *goquery.Selection, format string) []*bbs.Message {
 			}
 		}
 		ret[i] = &bbs.Message{
-			ID:          msg_id,
-			Author:      username,
-			AuthorID:    userid,
-			AuthorTitle: usertitle,
-			AvatarURL:   userpicURL,
-			Date:        date,
-			Text:        text,
-			Signature:   sig,
+			ID:                 msg_id,
+			Author:             username,
+			AuthorID:           userid,
+			AuthorTitle:        usertitle,
+			AvatarThumbnailURL: userpicURL,
+			Date:               date,
+			Text:               text,
+			Signature:          sig,
 		}
 	})
 	return ret

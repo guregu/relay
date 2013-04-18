@@ -1,0 +1,15 @@
+<h1>Server list</h1>
+<div>
+	<div class="server-box" ng-repeat="server in servers" ng-click="connect(server)">
+		<div class="icon" ng-show="server.name">
+			<img ng-src="{{server.icon}}">
+		</div>
+		<div class="inline">
+			<h2>{{server.name}}</h2>
+			{{server.desc}}
+		</div>
+	</div>
+	<div>
+		<button ng-click="refresh()">Refresh</button>
+	</div>
+</div>

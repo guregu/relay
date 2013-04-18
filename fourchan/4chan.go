@@ -36,9 +36,7 @@ var Hello = bbs.HelloMessage{
 type Fourchan struct {
 }
 
-type Catalog struct {
-	Pages []Page `json:"pages"`
-}
+type Catalog []Page
 
 type Page struct {
 	Number  int             `json:"page"`
@@ -108,7 +106,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 	// board/id
 	// like: cgl/4323443
 
-	split := strings.Split(m.ThreadID, "/")
+	split := strings.Split(m.ThreadID, ":")
 	if len(split) != 2 {
 		return nil, &bbs.ErrorMessage{"error", "get", "Invalid Thread ID: " + m.ThreadID}
 	}
@@ -117,7 +115,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 	threadID := split[1]
 
 	url := fmt.Sprintf(threadURL, board, threadID)
-	data, code := getBytes(url, false)
+	data, code := getBytes(url)
 	if code == 404 {
 		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Thread /%s/%s not found.", board, threadID)}
 	} else if code != 200 {
@@ -180,7 +178,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 }
 
 func (f *Fourchan) BoardList(m *bbs.ListCommand) (blm *bbs.BoardListMessage, em *bbs.ErrorMessage) {
-	data, code := getBytes(boardListURL, false)
+	data, code := getBytes(boardListURL)
 	if code != 200 {
 		return nil, &bbs.ErrorMessage{"error", "list", fmt.Sprintf("4chan error %d", code)}
 	}
@@ -204,22 +202,22 @@ func (f *Fourchan) BoardList(m *bbs.ListCommand) (blm *bbs.BoardListMessage, em 
 }
 
 func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorMessage) {
-	data, code := getBytes(fmt.Sprintf(catalogURL, m.Query), true)
+	data, code := getBytes(fmt.Sprintf(catalogURL, m.Query))
 	if code == 404 {
 		return nil, &bbs.ErrorMessage{"error", "list", fmt.Sprintf("Board /%s/ not found.", m.Query)}
 	} else if code != 200 {
 		return nil, &bbs.ErrorMessage{"error", "list", fmt.Sprintf("4chan error %d", code)}
 	}
 
-	var c = Catalog{}
+	var c Catalog
 	json.Unmarshal(data, &c)
 
 	var threads []*bbs.ThreadListing
 
 	//turn this into bbs messages
-	for page := range c.Pages {
-		for i := range c.Pages[page].Threads {
-			t := c.Pages[page].Threads[i]
+	for page := range c {
+		for i := range c[page].Threads {
+			t := c[page].Threads[i]
 
 			title := t.Subject
 			if title == "" {
@@ -232,7 +230,7 @@ func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorM
 			}
 
 			threads = append(threads, &bbs.ThreadListing{
-				ID:           m.Query + "/" + strconv.Itoa(t.Number),
+				ID:           m.Query + ":" + strconv.Itoa(t.Number),
 				Title:        title,
 				Author:       name(t),
 				AuthorID:     t.ID,
@@ -302,7 +300,7 @@ func name(t *FourchanPost) string {
 		}
 	}
 	if t.Capcode != "" {
-		username = username + "!!" + t.Capcode
+		username = username + " ## " + t.Capcode
 	}
 	if t.ID != "" {
 		username = username + " [ID: " + t.ID + "]"
@@ -310,20 +308,10 @@ func name(t *FourchanPost) string {
 	return username
 }
 
-// why moot why
-func fudge(b []byte) []byte {
-	before := []byte(`{"pages":`)
-	after := byte('}')
-	return append(append(before, b...), after)
-}
-
-func getBytes(url string, shouldFudge bool) (b []byte, statusCode int) {
+func getBytes(url string) (b []byte, statusCode int) {
 	resp, _ := http.Get(url)
 	b, _ = ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-	if shouldFudge {
-		b = fudge(b)
-	}
 	return b, resp.StatusCode
 }
 
