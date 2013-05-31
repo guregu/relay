@@ -1,8 +1,8 @@
 package main
 
-import "github.com/tiko-chan/bbs"
-import "github.com/tiko-chan/relay/fourchan"
-import "github.com/tiko-chan/relay/eti"
+import "github.com/guregu/bbs"
+import "github.com/guregu/relay/fourchan"
+import "github.com/guregu/relay/eti"
 import "github.com/laurent22/toml-go/toml"
 
 func main() {

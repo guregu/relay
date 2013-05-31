@@ -10,7 +10,6 @@ var bbsModule = angular.module('bbsview', []).
       otherwise({redirectTo: '/servers'});
 }]);
 
-
 var client = null;
 bbsModule.service('bbs', function($http, $location) {
 	if (client == null) {
@@ -60,7 +59,7 @@ function BBSClient($http, $location) {
 		if (split.length != 2) {
 			return { start: 0, end: 0 }
 		}
-		return { start: parseInt(split[0], 10), end: parseInt(split[0], 10) }
+		return { start: parseInt(split[0], 10), end: parseInt(split[1], 10) }
 	}
 
 	this.range2String = function(r) {

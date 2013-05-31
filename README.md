@@ -2,7 +2,7 @@ relay
 =====
 
 This is a testing ground for implementations of the bbs protocol.
-You can read more here: https://github.com/tiko-chan/bbs
+You can read more here: https://github.com/guregu/bbs
 
 Right now there isn't much.
 

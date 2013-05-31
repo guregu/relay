@@ -1,7 +1,7 @@
 package eti
 
-import "github.com/tiko-chan/goquery"
-import "github.com/tiko-chan/bbs"
+import "github.com/guregu/goquery"
+import "github.com/guregu/bbs"
 import "fmt"
 import "io/ioutil"
 import "net/url"

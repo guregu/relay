@@ -1,13 +1,13 @@
 package fourchan
 
-import "github.com/tiko-chan/bbs"
+import "github.com/guregu/bbs"
 import "io/ioutil"
 import "net/http"
 import "fmt"
 import "encoding/json"
 import "strconv"
 import "code.google.com/p/go.net/html"
-import "github.com/tiko-chan/goquery"
+import "github.com/guregu/goquery"
 import "strings"
 
 const threadURL = "http://api.4chan.org/%s/res/%s.json"
