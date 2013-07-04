@@ -50,6 +50,10 @@ type ETI struct {
 	loggedIn bool
 }
 
+func New() bbs.BBS {
+	return new(ETI)
+}
+
 func (eti *ETI) Hello() bbs.HelloMessage {
 	return Hello
 }

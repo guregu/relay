@@ -36,6 +36,10 @@ var Hello = bbs.HelloMessage{
 type Fourchan struct {
 }
 
+func New() bbs.BBS {
+	return new(Fourchan)
+}
+
 type Catalog []Page
 
 type Page struct {
