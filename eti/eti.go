@@ -1,6 +1,6 @@
 package eti
 
-import "github.com/guregu/goquery"
+import "github.com/PuerkitoBio/goquery"
 import "github.com/guregu/bbs"
 import "fmt"
 import "io/ioutil"
@@ -238,7 +238,11 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 			UnreadPosts: new_posts,
 		})
 	})
-	ret = &bbs.ListMessage{"list", "thread", query, threads}
+	ret = &bbs.ListMessage{
+		Command: "list",
+		Type:    "thread",
+		Query:   query,
+		Threads: threads}
 	return ret, nil
 }
 

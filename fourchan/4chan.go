@@ -7,7 +7,7 @@ import "fmt"
 import "encoding/json"
 import "strconv"
 import "code.google.com/p/go.net/html"
-import "github.com/guregu/goquery"
+import "github.com/PuerkitoBio/goquery"
 import "strings"
 
 const threadURL = "http://api.4chan.org/%s/res/%s.json"
