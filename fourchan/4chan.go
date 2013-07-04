@@ -89,6 +89,14 @@ func (b Board) String() string {
 	return fmt.Sprintf("/%s/ - %s", b.ID, b.Name)
 }
 
+func (f *Fourchan) Hello() bbs.HelloMessage {
+	return Hello
+}
+
+func (f *Fourchan) Register(m *bbs.RegisterCommand) (okm *bbs.OKMessage, em *bbs.ErrorMessage) {
+	return nil, bbs.Error("register", "Registration is not supported.")
+}
+
 func (f *Fourchan) LogIn(m *bbs.LoginCommand) bool {
 	return false
 }

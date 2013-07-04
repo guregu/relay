@@ -50,6 +50,14 @@ type ETI struct {
 	loggedIn bool
 }
 
+func (eti *ETI) Hello() bbs.HelloMessage {
+	return Hello
+}
+
+func (eti *ETI) Register(m *bbs.RegisterCommand) (okm *bbs.OKMessage, em *bbs.ErrorMessage) {
+	return nil, bbs.Error("register", "Registration is not supported.")
+}
+
 func (eti *ETI) IsLoggedIn() bool {
 	return eti.loggedIn
 }
