@@ -73,10 +73,21 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 	}
 
 	if m.Filter == "" {
-		m.Filter = "0" //ETI kludge
+		//m.Filter = "0" //ETI kludge
 	}
 
-	if !m.Range.Validate() {
+	if m.Range == nil {
+		if m.Token != "" {
+			start, err := strconv.Atoi(m.Token)
+			if err != nil {
+				m.Range = DefaultRange
+			} else {
+				m.Range = &bbs.Range{start, start + DefaultRange.End}
+			}
+		} else {
+			m.Range = DefaultRange
+		}
+	} else if !m.Range.Validate() {
 		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Invalid range (%v)", m.Range)}
 	}
 
@@ -85,10 +96,12 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 		ID:      m.ThreadID,
 		Range:   m.Range,
 		Filter:  m.Filter,
+		Format:  m.Format,
 	}
 	var doc *goquery.Document
 	var messagesSelection *goquery.Selection
 	archived := false
+	fmt.Printf("%#v\n", m.Range)
 	startPage, _ := etiPages(m.Range)
 	//archives doesn't properly redirect so there's some shit here to deal w/ that
 	for i, fetchURL := range etiURLs(t) {
@@ -171,6 +184,8 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 	t.Tags = tags
 
 	t.Messages = parseMessages(messagesSelection, m.Format)
+	t.More = true
+	t.NextToken = strconv.Itoa(m.Range.Start + len(t.Messages))
 	return t, nil
 }
 
@@ -185,7 +200,7 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 	ohs := doc.Find("tr")
 
 	if ohs.Size() == 0 {
-		return nil, &bbs.ErrorMessage{"error", "get", "No results: " + query}
+		return nil, &bbs.ErrorMessage{"error", "list", "No results: " + query}
 	}
 
 	var threads []*bbs.ThreadListing
