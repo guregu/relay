@@ -136,6 +136,8 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 	}
 
 	if messagesSelection == nil || messagesSelection.Size() == 0 {
+		dump, _ := doc.Html()
+		fmt.Println(dump)
 		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Invalid thread: %s. No messages.", m.ThreadID)}
 	}
 
@@ -267,6 +269,38 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 
 func (eti *ETI) BoardList(m *bbs.ListCommand) (blm *bbs.BoardListMessage, em *bbs.ErrorMessage) {
 	return nil, &bbs.ErrorMessage{"error", "list", "ETI has no boards anymore."}
+}
+
+func (eti *ETI) BookmarkList(m *bbs.ListCommand) (bmm *bbs.BookmarkListMessage, em *bbs.ErrorMessage) {
+	//ETI requires we be logged in to do anything
+	if !eti.IsLoggedIn() {
+		return nil, bbs.SessionErrorMessage
+	}
+
+	bmm = &bbs.BookmarkListMessage{
+		Command:   "list",
+		Type:      "bookmark",
+		Bookmarks: []*bbs.Bookmark{},
+	}
+
+	doc := stringToDocument(getURLData(eti.HTTPClient, topicsURL+"LUE"))
+	doc.Find("#bookmarks span").Each(func(i int, s *goquery.Selection) {
+		a := s.Find("a").First()
+		href, _ := a.Attr("href")
+		if href != "#" {
+			split := strings.Split(href, "/")
+			query := split[len(split)-1]
+			name := a.Text()
+			if name != "[edit]" {
+				bmm.Bookmarks = append(bmm.Bookmarks, &bbs.Bookmark{
+					Name:  name,
+					Query: query,
+				})
+			}
+		}
+	})
+
+	return bmm, nil
 }
 
 func (eti *ETI) LogIn(m *bbs.LoginCommand) bool {

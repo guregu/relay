@@ -271,6 +271,10 @@ func (f *Fourchan) Post(m *bbs.PostCommand) (pm *bbs.OKMessage, em *bbs.ErrorMes
 	return nil, &bbs.ErrorMessage{"error", "post", "This relay is read-only."}
 }
 
+func (eti *Fourchan) BookmarkList(m *bbs.ListCommand) (bmm *bbs.BookmarkListMessage, em *bbs.ErrorMessage) {
+	return nil, bbs.Error("list", "Not supported")
+}
+
 // takes the first line of a thread's comment for when it has no title
 func summary(msg string) string {
 	msg = unhtml(msg)

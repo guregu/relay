@@ -10,7 +10,7 @@ bind = "localhost:8080"
 path = "/bbs"
 name = "ETI Gateway"
 description = "ETI -> BBS Gateway"
-enabled = false
+enabled = true
 
 [fourchan]
 bind = "localhost:8080"
