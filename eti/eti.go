@@ -1,17 +1,21 @@
 package eti
 
-import "github.com/PuerkitoBio/goquery"
-import "github.com/guregu/bbs"
-import "fmt"
-import "io/ioutil"
-import "net/url"
-import "code.google.com/p/go.net/html"
-import "code.google.com/p/go.net/html/atom"
-import "net/http"
-import "code.google.com/p/cookiejar"
-import "strings"
-import "strconv"
-import "math"
+import (
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"math"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+
+	"code.google.com/p/cookiejar"
+	"code.google.com/p/go.net/html"
+	"code.google.com/p/go.net/html/atom"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/guregu/bbs"
+)
 
 const ETITopicsPerPage = 50.0
 const loginURL = "http://iphone.endoftheinter.net/"
@@ -23,8 +27,8 @@ const postThreadURL = "http://boards.endoftheinter.net/postmsg.php"
 const sigSplitHTML = "<br/>\n---<br/>"
 const sigSplitText = "\n---\n"
 
-var AllPosts = &bbs.Range{1, 5000}
-var DefaultRange = &bbs.Range{1, 50}
+var AllPosts = bbs.Range{1, 5000}
+var DefaultRange = bbs.Range{1, 50}
 
 var Hello = bbs.HelloMessage{
 	Command:         "hello",
@@ -58,40 +62,41 @@ func (eti *ETI) Hello() bbs.HelloMessage {
 	return Hello
 }
 
-func (eti *ETI) Register(m *bbs.RegisterCommand) (okm *bbs.OKMessage, em *bbs.ErrorMessage) {
-	return nil, bbs.Error("register", "Registration is not supported.")
+func (eti *ETI) Register(m bbs.RegisterCommand) (okm bbs.OKMessage, err error) {
+	err = errors.New("Registration is not supported.")
+	return
 }
 
 func (eti *ETI) IsLoggedIn() bool {
 	return eti.loggedIn
 }
 
-func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMessage) {
+func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 	//ETI requires we be logged in to do anything
 	if !client.IsLoggedIn() {
-		return nil, bbs.SessionErrorMessage
+		return bbs.ThreadMessage{}, errors.New("session")
 	}
 
 	if m.Filter == "" {
 		//m.Filter = "0" //ETI kludge
 	}
-
-	if m.Range == nil {
+	if m.Range == (bbs.Range{}) {
 		if m.Token != "" {
 			start, err := strconv.Atoi(m.Token)
 			if err != nil {
 				m.Range = DefaultRange
 			} else {
-				m.Range = &bbs.Range{start, start + DefaultRange.End}
+				m.Range = bbs.Range{start, start + DefaultRange.End}
 			}
 		} else {
 			m.Range = DefaultRange
 		}
 	} else if !m.Range.Validate() {
-		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Invalid range (%v)", m.Range)}
+		err = errors.New(fmt.Sprintf("Invalid range (%v)", m.Range))
+		return
 	}
 
-	t = &bbs.ThreadMessage{
+	t = bbs.ThreadMessage{
 		Command: "msg",
 		ID:      m.ThreadID,
 		Range:   m.Range,
@@ -138,7 +143,7 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 	if messagesSelection == nil || messagesSelection.Size() == 0 {
 		dump, _ := doc.Html()
 		fmt.Println(dump)
-		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Invalid thread: %s. No messages.", m.ThreadID)}
+		return bbs.ThreadMessage{}, errors.New(fmt.Sprintf("Invalid thread: %s. No messages.", m.ThreadID))
 	}
 
 	t.Title = doc.Find("h1").First().Text()
@@ -191,10 +196,10 @@ func (client *ETI) Get(m *bbs.GetCommand) (t *bbs.ThreadMessage, em *bbs.ErrorMe
 	return t, nil
 }
 
-func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.ErrorMessage) {
+func (client *ETI) List(m bbs.ListCommand) (ret bbs.ListMessage, err error) {
 	//ETI requires we be logged in to do anything
 	if !client.IsLoggedIn() {
-		return nil, bbs.SessionErrorMessage
+		return bbs.ListMessage{}, errors.New("session")
 	}
 
 	query := m.Query
@@ -202,10 +207,10 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 	ohs := doc.Find("tr")
 
 	if ohs.Size() == 0 {
-		return nil, &bbs.ErrorMessage{"error", "list", "No results: " + query}
+		return bbs.ListMessage{}, errors.New("No results: " + query)
 	}
 
-	var threads []*bbs.ThreadListing
+	var threads []bbs.ThreadListing
 	ohs.Each(func(i int, s *goquery.Selection) {
 		sel := s.Find(".oh")
 		if sel.Size() < 1 {
@@ -246,7 +251,7 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 		}
 		date := s.Find("td:nth-child(4)").Text()
 
-		threads = append(threads, &bbs.ThreadListing{
+		threads = append(threads, bbs.ThreadListing{
 			ID:          id,
 			Title:       title,
 			Author:      username,
@@ -259,7 +264,7 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 			UnreadPosts: new_posts,
 		})
 	})
-	ret = &bbs.ListMessage{
+	ret = bbs.ListMessage{
 		Command: "list",
 		Type:    "thread",
 		Query:   query,
@@ -267,20 +272,17 @@ func (client *ETI) List(m *bbs.ListCommand) (ret *bbs.ListMessage, em *bbs.Error
 	return ret, nil
 }
 
-func (eti *ETI) BoardList(m *bbs.ListCommand) (blm *bbs.BoardListMessage, em *bbs.ErrorMessage) {
-	return nil, &bbs.ErrorMessage{"error", "list", "ETI has no boards anymore."}
-}
-
-func (eti *ETI) BookmarkList(m *bbs.ListCommand) (bmm *bbs.BookmarkListMessage, em *bbs.ErrorMessage) {
+func (eti *ETI) BookmarkList(m bbs.ListCommand) (bmm bbs.BookmarkListMessage, err error) {
 	//ETI requires we be logged in to do anything
 	if !eti.IsLoggedIn() {
-		return nil, bbs.SessionErrorMessage
+		err = errors.New("session")
+		return
 	}
 
-	bmm = &bbs.BookmarkListMessage{
+	bmm = bbs.BookmarkListMessage{
 		Command:   "list",
 		Type:      "bookmark",
-		Bookmarks: []*bbs.Bookmark{},
+		Bookmarks: []bbs.Bookmark{},
 	}
 
 	doc := stringToDocument(getURLData(eti.HTTPClient, topicsURL+"LUE"))
@@ -292,7 +294,7 @@ func (eti *ETI) BookmarkList(m *bbs.ListCommand) (bmm *bbs.BookmarkListMessage, 
 			query := split[len(split)-1]
 			name := a.Text()
 			if name != "[edit]" {
-				bmm.Bookmarks = append(bmm.Bookmarks, &bbs.Bookmark{
+				bmm.Bookmarks = append(bmm.Bookmarks, bbs.Bookmark{
 					Name:  name,
 					Query: query,
 				})
@@ -303,7 +305,7 @@ func (eti *ETI) BookmarkList(m *bbs.ListCommand) (bmm *bbs.BookmarkListMessage, 
 	return bmm, nil
 }
 
-func (eti *ETI) LogIn(m *bbs.LoginCommand) bool {
+func (eti *ETI) LogIn(m bbs.LoginCommand) bool {
 	username := m.Username
 	password := m.Password
 	jar, _ := cookiejar.New(nil)
@@ -326,16 +328,17 @@ func (eti *ETI) LogIn(m *bbs.LoginCommand) bool {
 	return eti.loggedIn
 }
 
-func (eti *ETI) LogOut(m *bbs.LogoutCommand) *bbs.OKMessage {
+func (eti *ETI) LogOut(m bbs.LogoutCommand) bbs.OKMessage {
 	//ok sure
 	eti.loggedIn = false
-	return &bbs.OKMessage{"ok", "logout", ""}
+	return bbs.OKMessage{"ok", "logout", ""}
 }
 
-func (client *ETI) Post(m *bbs.PostCommand) (okm *bbs.OKMessage, em *bbs.ErrorMessage) {
+func (client *ETI) Post(m bbs.PostCommand) (okm bbs.OKMessage, err error) {
 	//ETI requires we be logged in to do anything
 	if !client.IsLoggedIn() {
-		return nil, bbs.SessionErrorMessage
+		err = errors.New("session")
+		return
 	}
 
 	title := m.Title
@@ -361,20 +364,21 @@ func (client *ETI) Post(m *bbs.PostCommand) (okm *bbs.OKMessage, em *bbs.ErrorMe
 
 	resp, _ := client.HTTPClient.PostForm(postThreadURL, v)
 	if resp.StatusCode == 200 {
-		return nil, &bbs.ErrorMessage{"error", "post", "Error. Check the length of your title/post."}
+		err = errors.New("Check the length of your title/post.")
 	} else if resp.StatusCode == 302 {
 		ret := strings.Split(resp.Header.Get("Location"), "?topic=")[1]
-		return &bbs.OKMessage{"ok", "post", ret}, nil
+		okm = bbs.OKMessage{"ok", "post", ret}
 	} else {
-		return nil, &bbs.ErrorMessage{"error", "post", "Error. Maybe ETI is down?"}
+		err = errors.New("Maybe ETI is down?")
 	}
 	return
 }
 
-func (client *ETI) Reply(m *bbs.ReplyCommand) (okm *bbs.OKMessage, em *bbs.ErrorMessage) {
+func (client *ETI) Reply(m bbs.ReplyCommand) (okm bbs.OKMessage, err error) {
 	//ETI requires we be logged in to do anything
 	if !client.IsLoggedIn() {
-		return nil, bbs.SessionErrorMessage
+		err = errors.New("session")
+		return
 	}
 
 	threadID := m.To
@@ -382,12 +386,12 @@ func (client *ETI) Reply(m *bbs.ReplyCommand) (okm *bbs.OKMessage, em *bbs.Error
 	//we need to get the 'h' (hash?) and sig from the topic
 	doc := stringToDocument(getURLData(client.HTTPClient, threadURL+threadID))
 	if doc.Find("textarea").Size() == 0 {
-		return nil, &bbs.ErrorMessage{"error", "reply", "You can't reply to this topic. It's probably archived"}
+		return bbs.OKMessage{}, errors.New("You can't reply to this topic. It's probably archived")
 	}
 
 	if doc.Find("h2 em").Text() == "This topic has been closed. No additional messages may be posted." {
 		//closed topic
-		return nil, &bbs.ErrorMessage{"error", "reply", "This topic has been closed. No additional messages may be posted."}
+		return bbs.OKMessage{}, errors.New("This topic has been closed. No additional messages may be posted.")
 	}
 
 	h, _ := doc.Find("input[name='h']").Attr("value")
@@ -406,16 +410,18 @@ func (client *ETI) Reply(m *bbs.ReplyCommand) (okm *bbs.OKMessage, em *bbs.Error
 	response_text := string(b)
 
 	if len(response_text) < 2 {
-		return nil, &bbs.ErrorMessage{"error", "reply", "Error. Maybe ETI is down?"}
+		err = errors.New("Maybe ETI is down?")
+		return
 	}
 
 	//ghetto error check
 	if response_text[1] == '"' {
 		errorMessage := strings.Split(response_text, `"`)[1]
-		return nil, &bbs.ErrorMessage{"error", "reply", errorMessage}
+		err = errors.New(errorMessage)
+		return
 	}
 
-	return &bbs.OKMessage{"ok", "reply", ""}, nil
+	return bbs.OKMessage{"ok", "reply", ""}, nil
 }
 
 func getURLData(client *http.Client, url string) string {
@@ -436,8 +442,8 @@ func stringToDocument(data string) *goquery.Document {
 	return goquery.NewDocumentFromNode(doc)
 }
 
-func parseMessages(messages *goquery.Selection, format string) []*bbs.Message {
-	ret := make([]*bbs.Message, messages.Size())
+func parseMessages(messages *goquery.Selection, format string) []bbs.Message {
+	ret := make([]bbs.Message, messages.Size())
 	messages.Each(func(i int, s *goquery.Selection) {
 		msg_id, _ := s.Attr("id")
 		msg_header := strings.Fields(s.Find(".message-top").Text())
@@ -489,7 +495,7 @@ func parseMessages(messages *goquery.Selection, format string) []*bbs.Message {
 				text, sig = findSig(text, sigSplitText)
 			}
 		}
-		ret[i] = &bbs.Message{
+		ret[i] = bbs.Message{
 			ID:                 msg_id,
 			Author:             username,
 			AuthorID:           userid,
@@ -519,13 +525,13 @@ func findSig(s string, splitter string) (text string, sig string) {
 	return text, sig
 }
 
-func etiPages(r *bbs.Range) (startPage, endPage int) {
+func etiPages(r bbs.Range) (startPage, endPage int) {
 	startPage = int(math.Floor(float64(r.Start)/ETITopicsPerPage) + 1)
 	endPage = int(math.Floor(float64(r.End)/ETITopicsPerPage) + 1)
 	return
 }
 
-func etiURLs(t *bbs.ThreadMessage) []string {
+func etiURLs(t bbs.ThreadMessage) []string {
 	startPage, endPage := etiPages(t.Range)
 	if startPage > endPage || endPage-startPage > 500 {
 		panic("Invalid range parameters.")

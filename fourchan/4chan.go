@@ -1,14 +1,17 @@
 package fourchan
 
-import "github.com/guregu/bbs"
-import "io/ioutil"
-import "net/http"
-import "fmt"
-import "encoding/json"
-import "strconv"
-import "code.google.com/p/go.net/html"
-import "github.com/PuerkitoBio/goquery"
-import "strings"
+import (
+	"code.google.com/p/go.net/html"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/PuerkitoBio/goquery"
+	"github.com/guregu/bbs"
+	"io/ioutil"
+	"net/http"
+	"strconv"
+	"strings"
+)
 
 const threadURL = "http://api.4chan.org/%s/res/%s.json"
 const boardURL = "http://api.4chan.org/%s/%d.json"
@@ -32,6 +35,8 @@ var Hello = bbs.HelloMessage{
 	Lists:         []string{"thread", "board"},
 	ServerVersion: "4chan-relay 0.1",
 }
+
+var readOnlyError = errors.New("This gateway is read-only.")
 
 type Fourchan struct {
 }
@@ -97,30 +102,30 @@ func (f *Fourchan) Hello() bbs.HelloMessage {
 	return Hello
 }
 
-func (f *Fourchan) Register(m *bbs.RegisterCommand) (okm *bbs.OKMessage, em *bbs.ErrorMessage) {
-	return nil, bbs.Error("register", "Registration is not supported.")
+func (f *Fourchan) Register(m bbs.RegisterCommand) (okm bbs.OKMessage, err error) {
+	return bbs.OKMessage{}, errors.New("Registration is not supported.")
 }
 
-func (f *Fourchan) LogIn(m *bbs.LoginCommand) bool {
+func (f *Fourchan) LogIn(m bbs.LoginCommand) bool {
 	return false
 }
 
-func (f *Fourchan) LogOut(m *bbs.LogoutCommand) *bbs.OKMessage {
-	return nil
+func (f *Fourchan) LogOut(m bbs.LogoutCommand) bbs.OKMessage {
+	return bbs.OKMessage{"ok", "logout", ""}
 }
 
 func (f *Fourchan) IsLoggedIn() bool {
 	return false
 }
 
-func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorMessage) {
+func (f *Fourchan) Get(m bbs.GetCommand) (tm bbs.ThreadMessage, err error) {
 	//ThreadIDs are in this format:
 	// board/id
 	// like: cgl/4323443
 
 	split := strings.Split(m.ThreadID, ":")
 	if len(split) != 2 {
-		return nil, &bbs.ErrorMessage{"error", "get", "Invalid Thread ID: " + m.ThreadID}
+		return bbs.ThreadMessage{}, errors.New("Invalid Thread ID: " + m.ThreadID)
 	}
 
 	board := split[0]
@@ -129,9 +134,9 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 	url := fmt.Sprintf(threadURL, board, threadID)
 	data, code := getBytes(url)
 	if code == 404 {
-		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("Thread /%s/%s not found.", board, threadID)}
+		return bbs.ThreadMessage{}, errors.New(fmt.Sprintf("Thread /%s/%s not found.", board, threadID))
 	} else if code != 200 {
-		return nil, &bbs.ErrorMessage{"error", "get", fmt.Sprintf("4chan error %d", code)}
+		return bbs.ThreadMessage{}, errors.New(fmt.Sprintf("4chan error %d", code))
 	}
 
 	//4chan json in
@@ -139,11 +144,11 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 	json.Unmarshal(data, &c)
 
 	if len(c.Posts) == 0 {
-		return nil, &bbs.ErrorMessage{"error", "get", "No posts!"}
+		return bbs.ThreadMessage{}, errors.New("No posts!")
 	}
 
 	//bbs json out
-	var messages []*bbs.Message
+	var messages []bbs.Message
 	op := c.Posts[0]
 
 	for i := range c.Posts {
@@ -159,7 +164,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 		}
 
 		if t.FileTime != 0 {
-			messages = append(messages, &bbs.Message{
+			messages = append(messages, bbs.Message{
 				ID:           strconv.Itoa(t.Number),
 				Author:       name(t),
 				AuthorID:     t.ID,
@@ -169,7 +174,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 				ThumbnailURL: thumb,
 			})
 		} else {
-			messages = append(messages, &bbs.Message{
+			messages = append(messages, bbs.Message{
 				ID:       strconv.Itoa(t.Number),
 				Author:   name(t),
 				AuthorID: t.ID,
@@ -179,7 +184,7 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 		}
 	}
 
-	return &bbs.ThreadMessage{
+	return bbs.ThreadMessage{
 		Command:  "msg",
 		ID:       strconv.Itoa(op.Number),
 		Title:    op.Subject,
@@ -189,42 +194,42 @@ func (f *Fourchan) Get(m *bbs.GetCommand) (tm *bbs.ThreadMessage, em *bbs.ErrorM
 	}, nil
 }
 
-func (f *Fourchan) BoardList(m *bbs.ListCommand) (blm *bbs.BoardListMessage, em *bbs.ErrorMessage) {
+func (f *Fourchan) BoardList(m bbs.ListCommand) (blm bbs.BoardListMessage, err error) {
 	data, code := getBytes(boardListURL)
 	if code != 200 {
-		return nil, &bbs.ErrorMessage{"error", "list", fmt.Sprintf("4chan error %d", code)}
+		return bbs.BoardListMessage{}, errors.New(fmt.Sprintf("4chan error %d", code))
 	}
 
 	var b = Boards{}
 	json.Unmarshal(data, &b)
 
-	var boards []*bbs.BoardListing
+	var boards []bbs.BoardListing
 	for _, board := range b.List {
-		boards = append(boards, &bbs.BoardListing{
+		boards = append(boards, bbs.BoardListing{
 			ID:   board.ID,
 			Name: board.String(),
 		})
 	}
 
-	return &bbs.BoardListMessage{
+	return bbs.BoardListMessage{
 		Command: "list",
 		Type:    "board",
 		Boards:  boards,
 	}, nil
 }
 
-func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorMessage) {
+func (f *Fourchan) List(m bbs.ListCommand) (lm bbs.ListMessage, err error) {
 	data, code := getBytes(fmt.Sprintf(catalogURL, m.Query))
 	if code == 404 {
-		return nil, &bbs.ErrorMessage{"error", "list", fmt.Sprintf("Board /%s/ not found.", m.Query)}
+		return bbs.ListMessage{}, errors.New(fmt.Sprintf("Board /%s/ not found.", m.Query))
 	} else if code != 200 {
-		return nil, &bbs.ErrorMessage{"error", "list", fmt.Sprintf("4chan error %d", code)}
+		return bbs.ListMessage{}, errors.New(fmt.Sprintf("4chan error %d", code))
 	}
 
 	var c Catalog
 	json.Unmarshal(data, &c)
 
-	var threads []*bbs.ThreadListing
+	var threads []bbs.ThreadListing
 
 	//turn this into bbs messages
 	for page := range c {
@@ -241,7 +246,7 @@ func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorM
 				thumb = spoilerImageURL
 			}
 
-			threads = append(threads, &bbs.ThreadListing{
+			threads = append(threads, bbs.ThreadListing{
 				ID:           m.Query + ":" + strconv.Itoa(t.Number),
 				Title:        title,
 				Author:       name(t),
@@ -254,7 +259,7 @@ func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorM
 		}
 	}
 
-	lm = &bbs.ListMessage{
+	lm = bbs.ListMessage{
 		Command: "list",
 		Type:    "thread",
 		Query:   m.Query,
@@ -263,16 +268,12 @@ func (f *Fourchan) List(m *bbs.ListCommand) (lm *bbs.ListMessage, em *bbs.ErrorM
 	return lm, nil
 }
 
-func (f *Fourchan) Reply(m *bbs.ReplyCommand) (ok *bbs.OKMessage, em *bbs.ErrorMessage) {
-	return nil, &bbs.ErrorMessage{"error", "reply", "This relay is read-only."}
+func (f *Fourchan) Reply(m bbs.ReplyCommand) (ok bbs.OKMessage, err error) {
+	return bbs.OKMessage{}, readOnlyError
 }
 
-func (f *Fourchan) Post(m *bbs.PostCommand) (pm *bbs.OKMessage, em *bbs.ErrorMessage) {
-	return nil, &bbs.ErrorMessage{"error", "post", "This relay is read-only."}
-}
-
-func (eti *Fourchan) BookmarkList(m *bbs.ListCommand) (bmm *bbs.BookmarkListMessage, em *bbs.ErrorMessage) {
-	return nil, bbs.Error("list", "Not supported")
+func (f *Fourchan) Post(m bbs.PostCommand) (pm bbs.OKMessage, err error) {
+	return bbs.OKMessage{}, readOnlyError
 }
 
 // takes the first line of a thread's comment for when it has no title
