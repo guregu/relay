@@ -20,6 +20,7 @@ func main() {
 	if etiEnabled {
 		eti.Hello.Name = conf.GetString("eti.name", eti.Hello.Name)
 		eti.Hello.Description = conf.GetString("eti.description", eti.Hello.Description)
+		eti.Hello.RealtimeURL = "ws://" + conf.GetString("eti.bind", "localhost:8080") + "/ws"
 		bbs.Serve(conf.GetString("eti.bind", "localhost:8080"), conf.GetString("eti.path", "/bbs"), eti.New)
 		servers++
 	}

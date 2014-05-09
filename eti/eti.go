@@ -141,8 +141,10 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 	}
 
 	if messagesSelection == nil || messagesSelection.Size() == 0 {
-		dump, _ := doc.Html()
-		fmt.Println(dump)
+		if doc != nil {
+			dump, _ := doc.Html()
+			fmt.Println(dump)
+		}
 		return bbs.ThreadMessage{}, errors.New(fmt.Sprintf("Invalid thread: %s. No messages.", m.ThreadID))
 	}
 
@@ -458,7 +460,7 @@ func parseMessages(messages *goquery.Selection, format string) []bbs.Message {
 			userid = strings.Split(profileURL, "?user=")[1]
 			username = s.Find(".message-top a:nth-child(2)").Text()
 		} else {
-			userid = strings.Split(profileURL, "&u=")[1]
+			userid = "-" + msg_header[2][1:]
 			username = fmt.Sprintf("%s %s", msg_header[1], msg_header[2])
 		}
 		offset := strings.Count(username, " ") //people with spaces in their name fuck everything up
