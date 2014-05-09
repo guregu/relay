@@ -10,6 +10,7 @@ bind = "localhost:8080"
 path = "/bbs"
 name = "ETI Gateway"
 description = "ETI -> BBS Gateway"
+cache = true
 enabled = true
 
 [fourchan]
@@ -18,3 +19,6 @@ path = "/bbs"
 name = "Fourchan Gateway"
 description = "Read only 4chan -> BBS Gateway"
 enabled = true
+
+[cache]
+addr = "localhost"

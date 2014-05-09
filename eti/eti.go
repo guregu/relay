@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,8 @@ const sigSplitText = "\n---\n"
 
 var AllPosts = bbs.Range{1, 5000}
 var DefaultRange = bbs.Range{1, 50}
+
+var topicIDExtractor = regexp.MustCompile(`<script type="text\/javascript">onDOMContentLoaded\(function\(\){new QuickPost\(([0-9]+),`)
 
 var Hello = bbs.HelloMessage{
 	Command:         "hello",
@@ -86,7 +89,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 			if err != nil {
 				m.Range = DefaultRange
 			} else {
-				m.Range = bbs.Range{start, start + DefaultRange.End}
+				m.Range = bbs.Range{start, start + DefaultRange.End - 1}
 			}
 		} else {
 			m.Range = DefaultRange
@@ -96,104 +99,143 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 		return
 	}
 
-	t = bbs.ThreadMessage{
-		Command: "msg",
-		ID:      m.ThreadID,
-		Range:   m.Range,
-		Filter:  m.Filter,
-		Format:  m.Format,
-	}
-	var doc *goquery.Document
-	var messagesSelection *goquery.Selection
-	archived := false
-	startPage, _ := etiPages(m.Range)
-	//archives doesn't properly redirect so there's some shit here to deal w/ that
-	for i, fetchURL := range etiURLs(t) {
-		if archived {
-			fetchURL = strings.Replace(fetchURL, "boards.endoftheinter.net", "archives.endoftheinter.net", -1)
-		}
-		currentDoc := stringToDocument(getURLData(client.HTTPClient, fetchURL))
-		//this is really ugly but basically archives are broken sorry
-		if i == 0 && currentDoc.Find("h2 em").Text() == "This topic has been archived. No additional messages may be posted." {
-			archived = true
-			fetchURL = strings.Replace(fetchURL, "boards.endoftheinter.net", "archives.endoftheinter.net", -1)
-			//it redirects to the first page, so we need to re-do our shit
-			if startPage != 1 {
-				currentDoc = stringToDocument(getURLData(client.HTTPClient, fetchURL))
+	// try to find cached ver
+	// unless there's a filter/diff format
+	needFetch, useCached, canCache := true, false, (m.Filter == "" && m.Format == "html")
+	fetchRange := m.Range
+	if canCache {
+		thread := getThread(m.ThreadID)
+		if thread != nil {
+			if m.Range.End > len(thread.Messages) {
+				fetchRange = bbs.Range{len(thread.Messages), m.Range.End}
+			} else {
+				needFetch = false
 			}
-			t.Closed = true
-		} else if i == 0 && currentDoc.Find("h2 em").Text() == "This topic has been closed. No additional messages may be posted." {
-			t.Closed = true
-		}
-
-		find := currentDoc.Find(".message-container")
-		if find.Size() == 0 {
-			break
-		}
-		if doc == nil {
-			doc = currentDoc
-			messagesSelection = find
-		} else {
-			//add posts to one big selection
-			messagesSelection = messagesSelection.Union(find)
+			t = *thread
+			t.Range = m.Range
+			useCached = true
 		}
 	}
-
-	if messagesSelection == nil || messagesSelection.Size() == 0 {
-		if doc != nil {
-			dump, _ := doc.Html()
-			fmt.Println(dump)
-		}
-		return bbs.ThreadMessage{}, errors.New(fmt.Sprintf("Invalid thread: %s. No messages.", m.ThreadID))
-	}
-
-	t.Title = doc.Find("h1").First().Text()
-
-	//we get all 50 posts per page, but sometimes we don't want them all
-	//there is probably a better way to do this
-	skipFirst := m.Range.Start%int(ETITopicsPerPage) - 1
-	if skipFirst < 0 {
-		skipFirst = 0
-	}
-	for n_i, node := range messagesSelection.Nodes {
-		if n_i < skipFirst {
-			messagesSelection = messagesSelection.NotNodes(node)
-		} else if n_i > m.Range.End-m.Range.Start+skipFirst {
-			messagesSelection = messagesSelection.NotNodes(node)
+	if !useCached {
+		t = bbs.ThreadMessage{
+			Command: "msg",
+			ID:      m.ThreadID,
+			Range:   m.Range,
+			Filter:  m.Filter,
+			Format:  m.Format,
 		}
 	}
-
-	//fix image links
-	messagesSelection.Find("a script").Each(func(i int, sel *goquery.Selection) {
-		a := sel.Parent()
-		url, ok := a.Attr("imgsrc")
-		if ok {
-			for a_i := range a.Nodes[0].Attr {
-				if a.Nodes[0].Attr[a_i].Key == "href" {
-					a.Nodes[0].Attr[a_i].Val = url
+	if !needFetch {
+		fmt.Println("cached :D " + m.ThreadID)
+	}
+	if needFetch {
+		var doc *goquery.Document
+		var messagesSelection *goquery.Selection
+		archived := false
+		startPage, _ := etiPages(m.Range)
+		//archives doesn't properly redirect so there's some shit here to deal w/ that
+		for i, fetchURL := range etiURLs(t, fetchRange) {
+			if archived {
+				fetchURL = strings.Replace(fetchURL, "boards.endoftheinter.net", "archives.endoftheinter.net", -1)
+			}
+			currentDoc := stringToDocument(getURLData(client.HTTPClient, fetchURL))
+			//this is really ugly but basically archives are broken sorry
+			if i == 0 && currentDoc.Find("h2 em").Text() == "This topic has been archived. No additional messages may be posted." {
+				archived = true
+				fetchURL = strings.Replace(fetchURL, "boards.endoftheinter.net", "archives.endoftheinter.net", -1)
+				//it redirects to the first page, so we need to re-do our shit
+				if startPage != 1 {
+					currentDoc = stringToDocument(getURLData(client.HTTPClient, fetchURL))
 				}
+				t.Closed = true
+			} else if i == 0 && currentDoc.Find("h2 em").Text() == "This topic has been closed. No additional messages may be posted." {
+				t.Closed = true
 			}
-			//transmute script into an image
-			//cant believe this works
-			script := sel.Nodes[0]
-			script.Type = html.ElementNode
-			script.Data = "img"
-			script.DataAtom = atom.Image
-			script.FirstChild = nil
-			script.Attr = []html.Attribute{html.Attribute{"", "src", url}}
+
+			// don't cache results w/ mod notes
+			danger := currentDoc.Find(".secret")
+			if danger.Size() > 0 {
+				canCache = false
+			}
+
+			find := currentDoc.Find(".message-container")
+			if find.Size() == 0 {
+				break
+			}
+			if doc == nil {
+				doc = currentDoc
+				messagesSelection = find
+			} else {
+				//add posts to one big selection
+				messagesSelection = messagesSelection.Union(find)
+			}
 		}
-	})
 
-	tagElems := doc.Find("h2 div a").Not("h2 div span a")
-	tags := make([]string, tagElems.Size())
-	tagElems.Each(func(t_i int, t_sel *goquery.Selection) {
-		tags[t_i] = t_sel.Text()
-	})
-	t.Tags = tags
+		if messagesSelection == nil || messagesSelection.Size() == 0 {
+			if doc != nil {
+				dump, _ := doc.Html()
+				fmt.Println(dump)
+			}
+			return bbs.ThreadMessage{}, errors.New(fmt.Sprintf("Invalid thread: %s. No messages.", m.ThreadID))
+		}
 
-	t.Messages = parseMessages(messagesSelection, m.Format)
+		t.Title = doc.Find("h1").First().Text()
+
+		//we get all 50 posts per page, but sometimes we don't want them all
+		//there is probably a better way to do this
+		skipFirst := fetchRange.Start%int(ETITopicsPerPage) - 1
+		if skipFirst < 0 {
+			skipFirst = 0
+		}
+		for n_i, node := range messagesSelection.Nodes {
+			if n_i < skipFirst {
+				messagesSelection = messagesSelection.NotNodes(node)
+			} else if n_i > fetchRange.End-fetchRange.Start+skipFirst {
+				messagesSelection = messagesSelection.NotNodes(node)
+			}
+		}
+
+		//fix image links
+		messagesSelection.Find("a script").Each(func(i int, sel *goquery.Selection) {
+			a := sel.Parent()
+			url, ok := a.Attr("imgsrc")
+			if ok {
+				for a_i := range a.Nodes[0].Attr {
+					if a.Nodes[0].Attr[a_i].Key == "href" {
+						a.Nodes[0].Attr[a_i].Val = url
+					}
+				}
+				//transmute script into an image
+				//cant believe this works
+				script := sel.Nodes[0]
+				script.Type = html.ElementNode
+				script.Data = "img"
+				script.DataAtom = atom.Image
+				script.FirstChild = nil
+				script.Attr = []html.Attribute{html.Attribute{"", "src", url}}
+			}
+		})
+
+		tagElems := doc.Find("h2 div a").Not("h2 div span a")
+		tags := make([]string, tagElems.Size())
+		tagElems.Each(func(t_i int, t_sel *goquery.Selection) {
+			tags[t_i] = t_sel.Text()
+		})
+		t.Tags = tags
+		newMessages := parseMessages(messagesSelection, m.Format)
+		t.Messages = append(t.Messages, newMessages...)
+		if canCache {
+			updateThread(t)
+		}
+	}
+	start, stop := min(max(0, m.Range.Start-1), len(t.Messages)), min(len(t.Messages), m.Range.End)
+	fmt.Println("slicey", m.Range, fetchRange, start, stop)
+	t.Messages = t.Messages[start:stop]
 	t.More = true
-	t.NextToken = strconv.Itoa(m.Range.Start + len(t.Messages))
+	t.NextToken = strconv.Itoa(stop + 1)
+	if stop == 0 {
+		t.NextToken = strconv.Itoa(m.Range.Start)
+	}
 	return t, nil
 }
 
@@ -364,14 +406,29 @@ func (client *ETI) Post(m bbs.PostCommand) (okm bbs.OKMessage, err error) {
 	v.Set("submit", "Post Message")
 
 	resp, _ := client.HTTPClient.PostForm(postThreadURL, v)
+	b, _ := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	response_html := string(b)
 	if resp.StatusCode == 200 {
-		err = errors.New("Check the length of your title/post.")
+		// as of 2014, this gives you your topic instead of a 302
+		// so we have to check for an error
+		doc := stringToDocument(response_html)
+		errorText := doc.Find(".body > em")
+		if errorText.Size() > 0 {
+			return bbs.OKMessage{}, errors.New(errorText.Text())
+		}
+		// ok!
+		id := topicIDExtractor.FindStringSubmatch(response_html)[1]
+		return bbs.OKMessage{"ok", "post", id}, nil
 	} else if resp.StatusCode == 302 {
+		// seems like this doesn't get called anymore :(
 		ret := strings.Split(resp.Header.Get("Location"), "?topic=")[1]
-		okm = bbs.OKMessage{"ok", "post", ret}
+		fmt.Println("AHHH", ret)
+		return bbs.OKMessage{"ok", "post", ret}, nil
 	} else {
-		err = errors.New("Maybe ETI is down?")
+		return bbs.OKMessage{}, errors.New("Maybe ETI is down?")
 	}
+	fmt.Println(resp.StatusCode)
 	return
 }
 
@@ -532,8 +589,8 @@ func etiPages(r bbs.Range) (startPage, endPage int) {
 	return
 }
 
-func etiURLs(t bbs.ThreadMessage) []string {
-	startPage, endPage := etiPages(t.Range)
+func etiURLs(t bbs.ThreadMessage, fetchRange bbs.Range) []string {
+	startPage, endPage := etiPages(fetchRange)
 	if startPage > endPage || endPage-startPage > 500 {
 		panic("Invalid range parameters.")
 	}
@@ -542,4 +599,18 @@ func etiURLs(t bbs.ThreadMessage) []string {
 		ret = append(ret, fmt.Sprintf("http://boards.endoftheinter.net/showmessages.php?topic=%s&page=%d&u=%s", t.ID, i, t.Filter))
 	}
 	return ret
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
