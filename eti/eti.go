@@ -106,7 +106,6 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 	var doc *goquery.Document
 	var messagesSelection *goquery.Selection
 	archived := false
-	fmt.Printf("%#v\n", m.Range)
 	startPage, _ := etiPages(m.Range)
 	//archives doesn't properly redirect so there's some shit here to deal w/ that
 	for i, fetchURL := range etiURLs(t) {
@@ -458,7 +457,7 @@ func parseMessages(messages *goquery.Selection, format string) []bbs.Message {
 		}
 		if !anon {
 			userid = strings.Split(profileURL, "?user=")[1]
-			username = s.Find(".message-top a:nth-child(2)").Text()
+			username = s.Find(".message-top a").First().Text()
 		} else {
 			userid = "-" + msg_header[2][1:]
 			username = fmt.Sprintf("%s %s", msg_header[1], msg_header[2])
