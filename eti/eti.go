@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -48,6 +49,12 @@ var Hello = bbs.HelloMessage{
 	ServerVersion: "eti-relay 0.1",
 	IconURL:       "/static/eti.png",
 	DefaultRange:  DefaultRange,
+}
+
+func Setup(name, desc, realtimePath string) {
+	Hello.Name = maybe(name, "ETI")
+	Hello.Description = maybe(desc, "ETI Gateway")
+	Hello.RealtimeURL = realtimePath
 }
 
 type ETI struct {
@@ -107,7 +114,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 		thread := getThread(m.ThreadID)
 		if thread != nil {
 			if m.Range.End > len(thread.Messages) {
-				fetchRange = bbs.Range{len(thread.Messages), m.Range.End}
+				fetchRange = bbs.Range{len(thread.Messages) + 1, m.Range.End}
 			} else {
 				needFetch = false
 			}
@@ -159,6 +166,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 			}
 
 			find := currentDoc.Find(".message-container")
+			fmt.Println("msgs found: ", find.Size())
 			if find.Size() == 0 {
 				break
 			}
@@ -168,6 +176,10 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 			} else {
 				//add posts to one big selection
 				messagesSelection = messagesSelection.Union(find)
+			}
+			if find.Size() < 50 {
+				// last page, so
+				break
 			}
 		}
 
@@ -183,10 +195,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 
 		//we get all 50 posts per page, but sometimes we don't want them all
 		//there is probably a better way to do this
-		skipFirst := fetchRange.Start%int(ETITopicsPerPage) - 1
-		if skipFirst < 0 {
-			skipFirst = 0
-		}
+		skipFirst := max(fetchRange.Start%int(ETITopicsPerPage)-1, 0)
 		for n_i, node := range messagesSelection.Nodes {
 			if n_i < skipFirst {
 				messagesSelection = messagesSelection.NotNodes(node)
@@ -196,25 +205,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 		}
 
 		//fix image links
-		messagesSelection.Find("a script").Each(func(i int, sel *goquery.Selection) {
-			a := sel.Parent()
-			url, ok := a.Attr("imgsrc")
-			if ok {
-				for a_i := range a.Nodes[0].Attr {
-					if a.Nodes[0].Attr[a_i].Key == "href" {
-						a.Nodes[0].Attr[a_i].Val = url
-					}
-				}
-				//transmute script into an image
-				//cant believe this works
-				script := sel.Nodes[0]
-				script.Type = html.ElementNode
-				script.Data = "img"
-				script.DataAtom = atom.Image
-				script.FirstChild = nil
-				script.Attr = []html.Attribute{html.Attribute{"", "src", url}}
-			}
-		})
+		messagesSelection.Find("a script").Each(transmuteImages)
 
 		tagElems := doc.Find("h2 div a").Not("h2 div span a")
 		tags := make([]string, tagElems.Size())
@@ -231,7 +222,10 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 	start, stop := min(max(0, m.Range.Start-1), len(t.Messages)), min(len(t.Messages), m.Range.End)
 	fmt.Println("slicey", m.Range, fetchRange, start, stop)
 	t.Messages = t.Messages[start:stop]
-	t.More = true
+	if stop%50 == 0 {
+		// TODO fix this, it's not exactly true. but it does reduce the number of needless page requests
+		t.More = true
+	}
 	t.NextToken = strconv.Itoa(stop + 1)
 	if stop == 0 {
 		t.NextToken = strconv.Itoa(m.Range.Start)
@@ -246,12 +240,18 @@ func (client *ETI) List(m bbs.ListCommand) (ret bbs.ListMessage, err error) {
 	}
 
 	query := m.Query
-	doc := stringToDocument(getURLData(client.HTTPClient, topicsURL+query))
+	data := getURLData(client.HTTPClient, topicsURL+query)
+	doc := stringToDocument(data)
 	ohs := doc.Find("tr")
 
 	if ohs.Size() == 0 {
+		fmt.Println("----- FUCK -----")
+		fmt.Println(data)
 		return bbs.ListMessage{}, errors.New("No results: " + query)
 	}
+
+	// update bookmarks
+	findBookmarks(client.Username, doc)
 
 	var threads []bbs.ThreadListing
 	ohs.Each(func(i int, s *goquery.Selection) {
@@ -322,28 +322,16 @@ func (eti *ETI) BookmarkList(m bbs.ListCommand) (bmm bbs.BookmarkListMessage, er
 		return
 	}
 
+	bookmarks := getBookmarks(eti.Username)
+	if bookmarks == nil {
+		doc := stringToDocument(getURLData(eti.HTTPClient, topicsURL+"LUE"))
+		bookmarks = findBookmarks(eti.Username, doc)
+	}
 	bmm = bbs.BookmarkListMessage{
 		Command:   "list",
 		Type:      "bookmark",
-		Bookmarks: []bbs.Bookmark{},
+		Bookmarks: bookmarks,
 	}
-
-	doc := stringToDocument(getURLData(eti.HTTPClient, topicsURL+"LUE"))
-	doc.Find("#bookmarks span").Each(func(i int, s *goquery.Selection) {
-		a := s.Find("a").First()
-		href, _ := a.Attr("href")
-		if href != "#" {
-			split := strings.Split(href, "/")
-			query := split[len(split)-1]
-			name := a.Text()
-			if name != "[edit]" {
-				bmm.Bookmarks = append(bmm.Bookmarks, bbs.Bookmark{
-					Name:  name,
-					Query: query,
-				})
-			}
-		}
-	})
 
 	return bmm, nil
 }
@@ -365,6 +353,8 @@ func (eti *ETI) LogIn(m bbs.LoginCommand) bool {
 		eti.loggedIn = true
 		eti.HTTPClient = c
 		eti.Username = username
+
+		log.Println("logged in", eti.Username)
 	} else {
 		eti.loggedIn = false
 	}
@@ -483,6 +473,7 @@ func (client *ETI) Reply(m bbs.ReplyCommand) (okm bbs.OKMessage, err error) {
 }
 
 func getURLData(client *http.Client, url string) string {
+	fmt.Println("getting:", url)
 	resp, e := client.Get(url)
 	if e != nil {
 		return "error"
@@ -601,6 +592,26 @@ func etiURLs(t bbs.ThreadMessage, fetchRange bbs.Range) []string {
 	return ret
 }
 
+func transmuteImages(i int, sel *goquery.Selection) {
+	a := sel.Parent()
+	url, ok := a.Attr("imgsrc")
+	if ok {
+		for a_i := range a.Nodes[0].Attr {
+			if a.Nodes[0].Attr[a_i].Key == "href" {
+				a.Nodes[0].Attr[a_i].Val = url
+			}
+		}
+		//transmute script into an image
+		//cant believe this works
+		script := sel.Nodes[0]
+		script.Type = html.ElementNode
+		script.Data = "img"
+		script.DataAtom = atom.Image
+		script.FirstChild = nil
+		script.Attr = []html.Attribute{html.Attribute{"", "src", url}}
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -613,4 +624,11 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func maybe(test string, def string) string {
+	if test == "" {
+		return def
+	}
+	return test
 }

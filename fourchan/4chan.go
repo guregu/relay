@@ -41,6 +41,18 @@ var readOnlyError = errors.New("This gateway is read-only.")
 type Fourchan struct {
 }
 
+func Setup(name, desc, realtimePath string) {
+	if name != "" {
+		Hello.Name = name
+	}
+	if desc != "" {
+		Hello.Description = desc
+	}
+	Hello.Name = maybe(name, "Fourchan")
+	Hello.Description = maybe(desc, "ETI Gateway")
+	Hello.RealtimeURL = realtimePath
+}
+
 func New() bbs.BBS {
 	return new(Fourchan)
 }
@@ -186,7 +198,7 @@ func (f *Fourchan) Get(m bbs.GetCommand) (tm bbs.ThreadMessage, err error) {
 
 	return bbs.ThreadMessage{
 		Command:  "msg",
-		ID:       strconv.Itoa(op.Number),
+		ID:       m.ThreadID,
 		Title:    op.Subject,
 		Board:    board,
 		Format:   "html",
@@ -338,4 +350,11 @@ func stringToDocument(data string) *goquery.Document {
 		panic("HTML Error: stringToDocument()")
 	}
 	return goquery.NewDocumentFromNode(doc)
+}
+
+func maybe(test string, def string) string {
+	if test == "" {
+		return def
+	}
+	return test
 }

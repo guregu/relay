@@ -1,39 +1,98 @@
 package main
 
-import "github.com/guregu/bbs"
-import "github.com/guregu/relay/fourchan"
-import "github.com/guregu/relay/eti"
-import "github.com/laurent22/toml-go/toml"
+import (
+	"encoding/json"
+	"flag"
+	"log"
+	"net/http"
+
+	"github.com/guregu/bbs"
+	"github.com/guregu/relay/eti"
+	"github.com/guregu/relay/fourchan"
+	"github.com/zenazn/goji"
+	"github.com/zenazn/goji/web"
+)
+
+var cfgFile = flag.String("config", "config.toml", "config file path")
+var cfg config
+var servers []relay
+
+type relay struct {
+	server *bbs.Server
+	Path   string `json:"path"`
+}
 
 func main() {
-	//bbs.Serve(*bind, "/bbs", eti.Hello, func() bbs.BBS { return new(eti.ETI) })
-	//bbs.Serve(*bind, "/bbs", fourchan.Hello, func() bbs.BBS { return new(fourchan.Fourchan) })
+	flag.Parse()
+	var err error
+	cfg, err = parseConfig(*cfgFile)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	servers := 0
+	if cfg.Server.Host == "" {
+		log.Fatalf("No host set in %s", *cfgFile)
+	}
 
-	var parser toml.Parser
-	conf := parser.ParseFile("config.toml")
-
-	etiEnabled := conf.GetBool("eti.enabled", false)
-	fourchanEnabled := conf.GetBool("fourchan.enabled", false)
-
-	if etiEnabled {
-		eti.Hello.Name = conf.GetString("eti.name", eti.Hello.Name)
-		eti.Hello.Description = conf.GetString("eti.description", eti.Hello.Description)
-		eti.Hello.RealtimeURL = "ws://" + conf.GetString("eti.bind", "localhost:8080") + "/ws"
-
-		if conf.GetBool("eti.cache") {
-			eti.DBConnect(conf.GetString("cache.addr", "localhost"), conf.GetString("eti.db", "eti"))
+	if cfg.ETI.Enabled {
+		path := maybe(cfg.ETI.Path, "/bbs")
+		wsPath := ws(path)
+		eti.Setup(cfg.ETI.Name, cfg.ETI.Description, wsPath)
+		if cfg.ETI.Cache && cfg.Cache.Addr != "" {
+			eti.DBConnect(cfg.Cache.Addr, "eti")
 		}
-
-		bbs.Serve(conf.GetString("eti.bind", "localhost:8080"), conf.GetString("eti.path", "/bbs"), eti.New)
-		servers++
+		srv := bbs.NewServer(eti.New)
+		goji.Handle(path, srv)
+		goji.Handle(path+"/ws", srv.WS)
+		servers = append(servers, relay{
+			server: srv,
+			Path:   path,
+		})
 	}
 
-	if fourchanEnabled {
-		fourchan.Hello.Name = conf.GetString("fourchan.name", fourchan.Hello.Name)
-		fourchan.Hello.Description = conf.GetString("fourchan.description", fourchan.Hello.Description)
-		bbs.Serve(conf.GetString("fourchan.bind", "localhost:8080"), conf.GetString("fourchan.path", "/bbs"), fourchan.New)
-		servers++
+	if cfg.FourChan.Enabled {
+		path := maybe(cfg.FourChan.Path, "/bbs")
+		wsPath := ws(path)
+		fourchan.Setup(cfg.FourChan.Name, cfg.FourChan.Description, wsPath)
+		// no cache yet. sorry moot
+		srv := bbs.NewServer(fourchan.New)
+		goji.Handle(path, srv)
+		goji.Handle(path+"/ws", srv.WS)
+		servers = append(servers, relay{
+			server: srv,
+			Path:   path,
+		})
 	}
+
+	if cfg.Web.Index != "" {
+		log.Println(cfg.Web.Index)
+		goji.Get(cfg.Web.Index, indexHandler)
+	}
+
+	if cfg.Web.Root != "" {
+		goji.Get("/*", http.FileServer(http.Dir(cfg.Web.Root)))
+	}
+
+	goji.Serve()
+}
+
+func indexHandler(c web.C, w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-Type", "application/json")
+	data, err := json.Marshal(servers)
+	log.Printf("%s", string(data))
+	if err != nil {
+		log.Println(err)
+	}
+	w.Write(data)
+}
+
+func maybe(test, def string) string {
+	if test == "" {
+		return def
+	}
+	return test
+}
+
+func ws(path string) string {
+	return "ws://" + cfg.Server.Host + path + "/ws"
 }

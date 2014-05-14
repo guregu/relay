@@ -3,14 +3,19 @@ package eti
 import (
 	"log"
 	"strings"
+	"time"
 
 	"labix.org/v2/mgo"
 	//"labix.org/v2/mgo/bson"
 	"github.com/guregu/bbs"
+	"github.com/pmylund/go-cache"
 )
 
 var dbSesh *mgo.Session
 var db *mgo.Database
+
+// map[username][]bookmark
+var bookmarkCache = cache.New(24*time.Hour, 1*time.Hour)
 
 var dangerTags = map[string]bool{
 	"TCF":         true,
@@ -68,4 +73,19 @@ func updateThread(thread bbs.ThreadMessage) {
 	}
 
 	db.C("threads").UpsertId(thread.ID, thread)
+}
+
+func getBookmarks(username string) []bbs.Bookmark {
+	bookmarks, ok := bookmarkCache.Get(username)
+	if !ok {
+		log.Println("no cache bookmark " + username)
+		return nil
+	}
+	log.Println("cache bookmark :) " + username)
+	return bookmarks.([]bbs.Bookmark)
+}
+
+func updateBookmarks(username string, bookmarks []bbs.Bookmark) {
+	log.Printf("upd8 bookmark %#v", bookmarks)
+	bookmarkCache.Set(username, bookmarks, 0)
 }

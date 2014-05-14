@@ -4,21 +4,27 @@
 # except for enabled, which must be true to start the server
 
 # right now, only one service can run at a time, but this will change.
+[server]
+host = "localhost:8000"
 
 [eti]
-bind = "localhost:8080"
-path = "/bbs"
+path = "/eti"
 name = "ETI Gateway"
-description = "ETI -> BBS Gateway"
+description = "ETI → BBS Gateway"
 cache = true
 enabled = true
 
 [fourchan]
-bind = "localhost:8080"
-path = "/bbs"
+path = "/4chan"
 name = "Fourchan Gateway"
-description = "Read only 4chan -> BBS Gateway"
+description = "4chan → BBS Gateway (read only)"
 enabled = true
 
+# mongodb post cache
 [cache]
 addr = "localhost"
+
+# web client setup
+[web]
+root = "/Users/greg/code/bbs-client/"
+index = "/index.json"
