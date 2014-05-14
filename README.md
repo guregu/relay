@@ -18,3 +18,7 @@ Lets you use endoftheinter.net under the bbs protocol. Not of much interest unle
 More soon!
 ----
 Sorry.
+
+License
+----
+BSD
