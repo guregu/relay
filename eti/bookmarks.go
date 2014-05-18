@@ -1,11 +1,17 @@
 package eti
 
 import (
+	"log"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/guregu/bbs"
+	"github.com/pmylund/go-cache"
 )
+
+// map[username][]bbs.Bookmark
+var bookmarkCache = cache.New(24*time.Hour, 1*time.Hour)
 
 // findBookmarks returns a user's bookmarks given the root document
 func findBookmarks(username string, doc *goquery.Document) []bbs.Bookmark {
@@ -26,7 +32,21 @@ func findBookmarks(username string, doc *goquery.Document) []bbs.Bookmark {
 		}
 	})
 	if bookmarks != nil {
-		updateBookmarks(username, bookmarks)
+		go updateBookmarks(username, bookmarks)
 	}
 	return bookmarks
+}
+
+func getBookmarks(username string) []bbs.Bookmark {
+	bookmarks, ok := bookmarkCache.Get(username)
+	if !ok {
+		log.Println("no cache bookmark " + username)
+		return nil
+	}
+	log.Println("cache bookmark :) " + username)
+	return bookmarks.([]bbs.Bookmark)
+}
+
+func updateBookmarks(username string, bookmarks []bbs.Bookmark) {
+	bookmarkCache.Set(username, bookmarks, 0)
 }

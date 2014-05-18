@@ -1,11 +1,11 @@
 package eti
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
-	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -14,7 +14,6 @@ import (
 
 	"code.google.com/p/cookiejar"
 	"code.google.com/p/go.net/html"
-	"code.google.com/p/go.net/html/atom"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/guregu/bbs"
 )
@@ -23,6 +22,7 @@ const ETITopicsPerPage = 50.0
 const loginURL = "http://iphone.endoftheinter.net/"
 const topicsURL = "http://boards.endoftheinter.net/topics/"
 const threadURL = "http://boards.endoftheinter.net/showmessages.php?topic="
+const archivedThreadURL = "http://archives.endoftheinter.net/showmessages.php?topic="
 const postReplyURL = "http://boards.endoftheinter.net/async-post.php"
 const postThreadURL = "http://boards.endoftheinter.net/postmsg.php"
 
@@ -68,6 +68,38 @@ func New() bbs.BBS {
 	return new(ETI)
 }
 
+func (eti *ETI) grab(url string) (*goquery.Document, error) {
+	log.Printf("Getting: [%s] %s", eti.Username, url)
+	r, err := eti.HTTPClient.Get(url)
+	defer r.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	return goquery.NewDocumentFromReader(r.Body)
+}
+
+// grabAjax gets one of those ajaxed }"html goes here" docs
+func (eti *ETI) grabAjax(url string) (*goquery.Document, error) {
+	log.Printf("Getting: [%s] %s", eti.Username, url)
+	r, err := eti.HTTPClient.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	data, err := ioutil.ReadAll(r.Body)
+	if len(data) < 3 {
+		return nil, errors.New("bad response")
+	}
+	if err != nil {
+		return nil, err
+	}
+	var raw string
+	err = json.Unmarshal(data[1:], &raw)
+	if err != nil {
+		return nil, err
+	}
+	return goquery.NewDocumentFromReader(strings.NewReader(raw))
+}
+
 func (eti *ETI) Hello() bbs.HelloMessage {
 	return Hello
 }
@@ -81,155 +113,215 @@ func (eti *ETI) IsLoggedIn() bool {
 	return eti.loggedIn
 }
 
+func (eti *ETI) fetchMetadata(id string) (metadata, error) {
+	url := threadURL + id
+	doc, err := eti.grab(url)
+	if err != nil {
+		return metadata{}, err
+	}
+
+	md := metadata{
+		ID: id,
+		Thread: bbs.ThreadMessage{
+			Command: "msg",
+			ID:      id,
+			Format:  "html", // TODO
+		},
+	}
+
+	// is ETI even ok?
+	// if len(doc.Find(".body").Nodes) == 0 {
+	// 	return metadata{}, serverIsDownError
+	// }
+
+	// can we even look at this thread?
+	if doc.Find(".body > em").Text() == "You are not authorized to view messages on this board." {
+		return metadata{}, accessDeniedError
+	}
+
+	// topic title
+	md.Thread.Title = doc.Find(".body > h1").First().Text()
+
+	// error-y text that shows up under the topic title
+	redText := doc.Find(".body > h2 > em").Text()
+	switch redText {
+	case "This topic has been archived. No additional messages may be posted.":
+		md.Archived, md.Thread.Closed = true, true
+	case "This topic has been closed. No additional messages may be posted.":
+		md.Thread.Closed = true
+	}
+
+	// extract the tags
+	doc.Find(".body > h2 > div > a").Each(func(i int, s *goquery.Selection) {
+		md.Thread.Tags = append(md.Thread.Tags, s.Text())
+	})
+
+	// get the last page and estimate the # of posts
+	lastPage, err := strconv.Atoi(doc.Find("#u0_2 > span:first-child").Text())
+	if err != nil {
+		return metadata{}, errors.New("parsing - latspage")
+	}
+	md.pages, md.Thread.Total = lastPage, lastPage*50
+
+	return md, nil
+}
+
+func (eti *ETI) fetchArchivedMsgs(md metadata) (*goquery.Selection, error) {
+	var msgs *goquery.Selection
+	urls, err := threadURLs(md.Thread.ID, bbs.Range{1, md.Thread.Total}, true)
+	if err != nil {
+		return nil, err
+	}
+	for _, url := range urls {
+		doc, err := eti.grab(url)
+		if err != nil {
+			return nil, err
+		}
+
+		m := doc.Find("message-container")
+		if msgs == nil {
+			msgs = m
+		} else {
+			msgs = msgs.Union(m)
+		}
+
+		if m.Size() < 50 {
+			// last page
+			break
+		}
+	}
+
+	// remove mod notes from the archives... RIP
+	msgs.Find(".secret").Each(func(i int, sel *goquery.Selection) {
+		// hope this works
+		sel.Nodes[0].FirstChild = nil
+	})
+
+	return msgs, nil
+}
+
 func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
-	//ETI requires we be logged in to do anything
 	if !client.IsLoggedIn() {
 		return bbs.ThreadMessage{}, errors.New("session")
 	}
 
-	if m.Filter == "" {
-		//m.Filter = "0" //ETI kludge
+	var reqRange = m.Range
+	if reqRange.Empty() {
+		reqRange = DefaultRange
+	} else {
+		if !reqRange.Validate() {
+			err = errors.New(fmt.Sprintf("Invalid range (%v)", m.Range))
+			return
+		}
 	}
-	if m.Range == (bbs.Range{}) {
-		if m.Token != "" {
-			start, err := strconv.Atoi(m.Token)
+	// tokens have precent over range for now
+	// I don't think they should be together anyway
+	if m.Token != "" {
+		if r, ok := parseToken(m.Token); ok {
+			reqRange = r
+		}
+	}
+
+	// TODO: filters need special treatment
+	// ideally fetching the whole topic and then filtering
+	// also their tokens need special treatment too
+	// [token: len(messages)]
+
+	// see if we can get the cached version
+	// TODO: formatting
+
+	md := getThread(m.ThreadID)
+	if md == nil {
+		fetch, err := client.fetchMetadata(m.ThreadID)
+		if err != nil {
+			return bbs.ThreadMessage{}, err
+		}
+		md = &fetch
+	}
+
+	danger := false // can we cache this thread without leaking stuff?
+	// if we haven't fetched any messages yet
+	if len(md.Thread.Messages) == 0 {
+		var msgs *goquery.Selection
+		if md.Archived {
+			var err error
+			msgs, err = client.fetchArchivedMsgs(*md)
 			if err != nil {
-				m.Range = DefaultRange
-			} else {
-				m.Range = bbs.Range{start, start + DefaultRange.End - 1}
+				return bbs.ThreadMessage{}, err
 			}
 		} else {
-			m.Range = DefaultRange
+			// get the whole fkn thread
+			doc, err := client.grabAjax(fmt.Sprintf(
+				"http://boards.endoftheinter.net/moremessages.php?topic=%s&old=0&new=6666&filter=0", m.ThreadID))
+			if err != nil {
+				return bbs.ThreadMessage{}, err
+			}
+			msgs = doc.Find(".message-container")
 		}
-	} else if !m.Range.Validate() {
-		err = errors.New(fmt.Sprintf("Invalid range (%v)", m.Range))
-		return
-	}
+		msgs.Find("a script").Each(transmuteImages)
 
-	// try to find cached ver
-	// unless there's a filter/diff format
-	needFetch, useCached, canCache := true, false, (m.Filter == "" && m.Format == "html")
-	fetchRange := m.Range
-	if canCache {
-		thread := getThread(m.ThreadID)
-		if thread != nil {
-			if m.Range.End > len(thread.Messages) {
-				fetchRange = bbs.Range{len(thread.Messages) + 1, m.Range.End}
-			} else {
-				needFetch = false
-			}
-			t = *thread
-			t.Range = m.Range
-			useCached = true
-		}
-	}
-	if !useCached {
-		t = bbs.ThreadMessage{
-			Command: "msg",
-			ID:      m.ThreadID,
-			Range:   m.Range,
-			Filter:  m.Filter,
-			Format:  m.Format,
-		}
-	}
-	if !needFetch {
-		fmt.Println("cached :D " + m.ThreadID)
-	}
-	if needFetch {
-		var doc *goquery.Document
-		var messagesSelection *goquery.Selection
-		archived := false
-		startPage, _ := etiPages(m.Range)
-		//archives doesn't properly redirect so there's some shit here to deal w/ that
-		for i, fetchURL := range etiURLs(t, fetchRange) {
-			if archived {
-				fetchURL = strings.Replace(fetchURL, "boards.endoftheinter.net", "archives.endoftheinter.net", -1)
-			}
-			currentDoc := stringToDocument(getURLData(client.HTTPClient, fetchURL))
-			//this is really ugly but basically archives are broken sorry
-			if i == 0 && currentDoc.Find("h2 em").Text() == "This topic has been archived. No additional messages may be posted." {
-				archived = true
-				fetchURL = strings.Replace(fetchURL, "boards.endoftheinter.net", "archives.endoftheinter.net", -1)
-				//it redirects to the first page, so we need to re-do our shit
-				if startPage != 1 {
-					currentDoc = stringToDocument(getURLData(client.HTTPClient, fetchURL))
-				}
-				t.Closed = true
-			} else if i == 0 && currentDoc.Find("h2 em").Text() == "This topic has been closed. No additional messages may be posted." {
-				t.Closed = true
-			}
+		// TODO: bbshtmlify
+		md.Thread.Messages = parseMessages(msgs, "html")
+		md.Thread.Total = len(md.Thread.Messages)
+		md.Thread.Range = bbs.Range{1, md.Thread.Total}
 
-			// don't cache results w/ mod notes
-			danger := currentDoc.Find(".secret")
-			if danger.Size() > 0 {
-				canCache = false
-			}
-
-			find := currentDoc.Find(".message-container")
-			fmt.Println("msgs found: ", find.Size())
-			if find.Size() == 0 {
-				break
-			}
-			if doc == nil {
-				doc = currentDoc
-				messagesSelection = find
-			} else {
-				//add posts to one big selection
-				messagesSelection = messagesSelection.Union(find)
-			}
-			if find.Size() < 50 {
-				// last page, so
-				break
-			}
+		if msgs.Find(".secret").Size() == 0 {
+			// don't cache mod notes
+			go updateThread(*md)
+		} else {
+			danger = true
 		}
 
-		if messagesSelection == nil || messagesSelection.Size() == 0 {
-			if doc != nil {
-				dump, _ := doc.Html()
-				fmt.Println(dump)
-			}
-			return bbs.ThreadMessage{}, errors.New(fmt.Sprintf("Invalid thread: %s. No messages.", m.ThreadID))
-		}
-
-		t.Title = doc.Find("h1").First().Text()
-
-		//we get all 50 posts per page, but sometimes we don't want them all
-		//there is probably a better way to do this
-		skipFirst := max(fetchRange.Start%int(ETITopicsPerPage)-1, 0)
-		for n_i, node := range messagesSelection.Nodes {
-			if n_i < skipFirst {
-				messagesSelection = messagesSelection.NotNodes(node)
-			} else if n_i > fetchRange.End-fetchRange.Start+skipFirst {
-				messagesSelection = messagesSelection.NotNodes(node)
-			}
-		}
-
-		//fix image links
-		messagesSelection.Find("a script").Each(transmuteImages)
-
-		tagElems := doc.Find("h2 div a").Not("h2 div span a")
-		tags := make([]string, tagElems.Size())
-		tagElems.Each(func(t_i int, t_sel *goquery.Selection) {
-			tags[t_i] = t_sel.Text()
-		})
-		t.Tags = tags
-		newMessages := parseMessages(messagesSelection, m.Format)
-		t.Messages = append(t.Messages, newMessages...)
-		if canCache {
-			updateThread(t)
+		if reqRange.Start > len(md.Thread.Messages) {
+			// since we just got the whole thread we know this request will be empty
+			t = md.Thread
+			t.Range = reqRange
+			t.Messages = []bbs.Message{}
+			t.More = false
+			t.NextToken = strconv.Itoa(len(md.Thread.Messages))
+			return t, nil
 		}
 	}
-	start, stop := min(max(0, m.Range.Start-1), len(t.Messages)), min(len(t.Messages), m.Range.End)
-	fmt.Println("slicey", m.Range, fetchRange, start, stop)
+
+	if reqRange.End > len(md.Thread.Messages) {
+		doc, err := client.grabAjax(fmt.Sprintf(
+			// old=1, new=3
+			// gives posts: 2, 3
+			"http://boards.endoftheinter.net/moremessages.php?topic=%s&old=%d&new=%d&filter=0", m.ThreadID, len(md.Thread.Messages), reqRange.End))
+		if err != nil {
+			return bbs.ThreadMessage{}, err
+		}
+		msgs := doc.Find(".message-container")
+		msgs.Find("a script").Each(transmuteImages)
+		if msgs.Find(".secret").Size() > 0 {
+			danger = true
+		}
+		incoming := parseMessages(msgs, "html")
+		md.Thread.Messages = append(md.Thread.Messages, incoming...)
+	}
+
+	if !danger {
+		go updateThread(*md)
+	}
+
+	t = md.Thread
+	// filter by poster
+	if m.Filter != "" {
+		var msgs []bbs.Message
+		for _, msg := range t.Messages {
+			if msg.AuthorID == m.Filter {
+				msgs = append(msgs, msg)
+			}
+		}
+		t.Messages = msgs
+		t.Filter = m.Filter
+	}
+	start, stop := max(reqRange.Start-1, 0), min(reqRange.End, len(t.Messages))
+	// filter by range
 	t.Messages = t.Messages[start:stop]
-	if stop%50 == 0 {
-		// TODO fix this, it's not exactly true. but it does reduce the number of needless page requests
-		t.More = true
-	}
-	t.NextToken = strconv.Itoa(stop + 1)
-	if stop == 0 {
-		t.NextToken = strconv.Itoa(m.Range.Start)
-	}
+
+	t.More = stop < len(t.Messages)
+	t.NextToken = strconv.Itoa(stop)
 	return t, nil
 }
 
@@ -572,44 +664,6 @@ func findSig(s string, splitter string) (text string, sig string) {
 	text = strings.Join(split[0:length-1], splitter)
 	sig = split[length-1]
 	return text, sig
-}
-
-func etiPages(r bbs.Range) (startPage, endPage int) {
-	startPage = int(math.Floor(float64(r.Start)/ETITopicsPerPage) + 1)
-	endPage = int(math.Floor(float64(r.End)/ETITopicsPerPage) + 1)
-	return
-}
-
-func etiURLs(t bbs.ThreadMessage, fetchRange bbs.Range) []string {
-	startPage, endPage := etiPages(fetchRange)
-	if startPage > endPage || endPage-startPage > 500 {
-		panic("Invalid range parameters.")
-	}
-	var ret []string
-	for i := int(startPage); i <= int(endPage); i++ {
-		ret = append(ret, fmt.Sprintf("http://boards.endoftheinter.net/showmessages.php?topic=%s&page=%d&u=%s", t.ID, i, t.Filter))
-	}
-	return ret
-}
-
-func transmuteImages(i int, sel *goquery.Selection) {
-	a := sel.Parent()
-	url, ok := a.Attr("imgsrc")
-	if ok {
-		for a_i := range a.Nodes[0].Attr {
-			if a.Nodes[0].Attr[a_i].Key == "href" {
-				a.Nodes[0].Attr[a_i].Val = url
-			}
-		}
-		//transmute script into an image
-		//cant believe this works
-		script := sel.Nodes[0]
-		script.Type = html.ElementNode
-		script.Data = "img"
-		script.DataAtom = atom.Image
-		script.FirstChild = nil
-		script.Attr = []html.Attribute{html.Attribute{"", "src", url}}
-	}
 }
 
 func min(a, b int) int {

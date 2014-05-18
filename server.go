@@ -76,6 +76,7 @@ func main() {
 	goji.Serve()
 }
 
+// for index.json, which lists all our servers
 func indexHandler(c web.C, w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "application/json")
 	data, err := json.Marshal(servers)
