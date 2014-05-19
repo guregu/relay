@@ -86,11 +86,13 @@ func (eti *ETI) grabAjax(url string) (*goquery.Document, error) {
 		return nil, err
 	}
 	data, err := ioutil.ReadAll(r.Body)
-	if len(data) < 3 {
+	switch {
+	case len(data) < 3:
 		return nil, errors.New("bad response")
-	}
-	if err != nil {
+	case err != nil:
 		return nil, err
+	case data[0] != '}':
+		return nil, sessionError
 	}
 	var raw string
 	err = json.Unmarshal(data[1:], &raw)
@@ -134,6 +136,11 @@ func (eti *ETI) fetchMetadata(id string) (metadata, error) {
 	// 	return metadata{}, serverIsDownError
 	// }
 
+	// did we get logged out?
+	if doc.Find("title").Text() == "Das Ende des Internets" {
+		return metadata{}, sessionError
+	}
+
 	// can we even look at this thread?
 	if doc.Find(".body > em").Text() == "You are not authorized to view messages on this board." {
 		return metadata{}, accessDeniedError
@@ -176,6 +183,11 @@ func (eti *ETI) fetchArchivedMsgs(md metadata) (*goquery.Selection, error) {
 		doc, err := eti.grab(url)
 		if err != nil {
 			return nil, err
+		}
+
+		// did we get logged out?
+		if doc.Find("title").Text() == "Das Ende des Internets" {
+			return nil, sessionError
 		}
 
 		m := doc.Find("message-container")
@@ -257,7 +269,13 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 				return bbs.ThreadMessage{}, err
 			}
 			msgs = doc.Find(".message-container")
+
+			// did we get logged out?
+			if doc.Find("title").Text() == "Das Ende des Internets" {
+				return bbs.ThreadMessage{}, sessionError
+			}
 		}
+
 		msgs.Find("a script").Each(transmuteImages)
 
 		// TODO: bbshtmlify
@@ -290,6 +308,9 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 			"http://boards.endoftheinter.net/moremessages.php?topic=%s&old=%d&new=%d&filter=0", m.ThreadID, len(md.Thread.Messages), reqRange.End))
 		if err != nil {
 			return bbs.ThreadMessage{}, err
+		}
+		if doc.Find("title").Text() == "Das Ende des Internets" {
+			return bbs.ThreadMessage{}, sessionError
 		}
 		msgs := doc.Find(".message-container")
 		msgs.Find("a script").Each(transmuteImages)
@@ -334,6 +355,11 @@ func (client *ETI) List(m bbs.ListCommand) (ret bbs.ListMessage, err error) {
 	query := m.Query
 	data := getURLData(client.HTTPClient, topicsURL+query)
 	doc := stringToDocument(data)
+
+	if doc.Find("title").Text() == "Das Ende des Internets" {
+		return bbs.ListMessage{}, sessionError
+	}
+
 	ohs := doc.Find("tr")
 
 	if ohs.Size() == 0 {

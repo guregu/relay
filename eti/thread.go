@@ -19,6 +19,7 @@ import (
 var (
 	accessDeniedError = errors.New("access denied")
 	serverIsDownError = errors.New("remote server")
+	sessionError      = errors.New("session")
 )
 
 var dangerTags = map[string]bool{
