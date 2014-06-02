@@ -28,6 +28,7 @@ const postThreadURL = "http://boards.endoftheinter.net/postmsg.php"
 
 const sigSplitHTML = "<br/>\n---<br/>"
 const sigSplitText = "\n---\n"
+const loginPageTitle = "Das Ende des Internets"
 
 var AllPosts = bbs.Range{1, 5000}
 var DefaultRange = bbs.Range{1, 50}
@@ -137,7 +138,7 @@ func (eti *ETI) fetchMetadata(id string) (metadata, error) {
 	// }
 
 	// did we get logged out?
-	if doc.Find("title").Text() == "Das Ende des Internets" {
+	if doc.Find("title").Text() == loginPageTitle {
 		return metadata{}, sessionError
 	}
 
@@ -186,7 +187,7 @@ func (eti *ETI) fetchArchivedMsgs(md metadata) (*goquery.Selection, error) {
 		}
 
 		// did we get logged out?
-		if doc.Find("title").Text() == "Das Ende des Internets" {
+		if doc.Find("title").Text() == loginPageTitle {
 			return nil, sessionError
 		}
 
@@ -234,11 +235,6 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 		}
 	}
 
-	// TODO: filters need special treatment
-	// ideally fetching the whole topic and then filtering
-	// also their tokens need special treatment too
-	// [token: len(messages)]
-
 	// see if we can get the cached version
 	// TODO: formatting
 
@@ -271,7 +267,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 			msgs = doc.Find(".message-container")
 
 			// did we get logged out?
-			if doc.Find("title").Text() == "Das Ende des Internets" {
+			if doc.Find("title").Text() == loginPageTitle {
 				return bbs.ThreadMessage{}, sessionError
 			}
 		}
@@ -309,7 +305,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 		if err != nil {
 			return bbs.ThreadMessage{}, err
 		}
-		if doc.Find("title").Text() == "Das Ende des Internets" {
+		if doc.Find("title").Text() == loginPageTitle {
 			return bbs.ThreadMessage{}, sessionError
 		}
 		msgs := doc.Find(".message-container")
@@ -340,7 +336,7 @@ func (client *ETI) Get(m bbs.GetCommand) (t bbs.ThreadMessage, err error) {
 	start, stop := max(reqRange.Start-1, 0), min(reqRange.End, len(t.Messages))
 	// filter by range
 	t.Messages = t.Messages[start:stop]
-
+	t.Range = bbs.Range{start + 1, stop}
 	t.More = stop < len(t.Messages)
 	t.NextToken = strconv.Itoa(stop)
 	return t, nil
@@ -356,7 +352,9 @@ func (client *ETI) List(m bbs.ListCommand) (ret bbs.ListMessage, err error) {
 	data := getURLData(client.HTTPClient, topicsURL+query)
 	doc := stringToDocument(data)
 
-	if doc.Find("title").Text() == "Das Ende des Internets" {
+	// TODO: check for 500 whitescreenlinks
+
+	if doc.Find("title").Text() == loginPageTitle {
 		return bbs.ListMessage{}, sessionError
 	}
 
