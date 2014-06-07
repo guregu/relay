@@ -40,14 +40,14 @@ var Hello = bbs.HelloMessage{
 	Name:            "ETI Relay",
 	ProtocolVersion: 0,
 	Description:     "End of the Internet -> BBS Relay",
-	Options:         []string{"tags", "avatars", "usertitles", "filter", "signatures", "range"},
+	Options:         []string{"tags", "avatars", "usertitles", "filter", "signatures", "range", "bookmarks"},
 	Access: bbs.AccessInfo{
 		GuestCommands: []string{"hello", "login", "logout"},
 		UserCommands:  []string{"get", "list", "post", "reply", "info"},
 	},
 	Formats:       []string{"html", "text"},
-	Lists:         []string{"thread"},
-	ServerVersion: "eti-relay 0.1",
+	Lists:         []string{"thread", "bookmark"},
+	ServerVersion: "eti-relay 0.2",
 	IconURL:       "/static/eti.png",
 	DefaultRange:  DefaultRange,
 }
