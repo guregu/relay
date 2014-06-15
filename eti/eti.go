@@ -25,6 +25,7 @@ const threadURL = "http://boards.endoftheinter.net/showmessages.php?topic="
 const archivedThreadURL = "http://archives.endoftheinter.net/showmessages.php?topic="
 const postReplyURL = "http://boards.endoftheinter.net/async-post.php"
 const postThreadURL = "http://boards.endoftheinter.net/postmsg.php"
+const tagListURL = "http://boards.endoftheinter.net/async-tag-query.php?all"
 
 const sigSplitHTML = "<br/>\n---<br/>"
 const sigSplitText = "\n---\n"
@@ -191,7 +192,7 @@ func (eti *ETI) fetchArchivedMsgs(md metadata) (*goquery.Selection, error) {
 			return nil, sessionError
 		}
 
-		m := doc.Find("message-container")
+		m := doc.Find(".message-container")
 		if msgs == nil {
 			msgs = m
 		} else {
